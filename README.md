@@ -26,7 +26,7 @@
 
 ```powershell
 # 1. 克隆到本地任意目录
-git clone https://github.com/<your-name>/dsh-claude-subscriptions.git
+git clone https://github.com/type53/dsh-claude-subscriptions.git
 cd dsh-claude-subscriptions
 pnpm install
 

@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "description": "Use a Claude (Anthropic) subscription via OAuth as a DeepSeek Harness LLM provider — 在 dsh web 设置中添加「订阅」标签页，连接 Claude 订阅后即可在对话中使用 Claude 的各种模型。",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/type53/dsh-claude-subscriptions.git"
+  },
+  "homepage": "https://github.com/type53/dsh-claude-subscriptions",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
   "exports": {
