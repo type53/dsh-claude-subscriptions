@@ -22,6 +22,8 @@ If you already have a **Claude Pro / Max subscription** and use **DeepSeek Harne
 
 - **Settings → Subscriptions**: one click, authorize with your claude.ai account in the browser — no API key involved;
 - Once connected, Claude models show up in the **model picker** next to the input box (or `/model`) — select one and the agent works with Claude, whether it's code, writing, or analysis;
+- The **model list is fetched from Anthropic automatically** after you connect, and can be refreshed from the Subscriptions tab — no manual model configuration;
+- **Image input** is supported: attach a screenshot or image and Claude reads it;
 - Connection status, account info, and disconnect all live in the Subscriptions tab;
 - No subscription? A plain **Anthropic API key** is supported as a fallback.
 
@@ -89,14 +91,14 @@ The plugin auto-refreshes with the refresh token and falls back to Anthropic's t
 Depends on your plan. By default: `claude-opus-4-1`, `claude-sonnet-4-5`, `claude-haiku-4-5`; you can customize the list in configuration (below).
 
 **Does it support images / vision?**
-Not yet — the plugin currently integrates Claude as a text-only provider.
+Yes. Attach images (PNG / JPEG / WebP / GIF) to a message and the plugin sends them to Claude as base64 image blocks.
 
 **Will this affect my existing DeepSeek models?**
 Not at all. It only adds a provider; switch between them freely.
 
 ## Advanced: custom model list (optional)
 
-If you don't want the default three models, add an `llm-claude` section to `$DSH_HOME\settings.yaml`:
+The model list refreshes automatically after you connect (and via the **Refresh model list** button in the Subscriptions tab). If you want to override it by hand, add an `llm-claude` section to `$DSH_HOME\settings.yaml`:
 
 ```yaml
 llm-claude:
@@ -115,7 +117,7 @@ llm-claude:
 ## How it works (for the curious)
 
 - **Login**: the same **OAuth PKCE** flow Claude Code uses — the plugin runs a loopback callback port locally; after you authorize at claude.ai, tokens are stored in `$DSH_HOME/.credentials.yaml`;
-- **Calls**: the plugin streams requests to the Anthropic Messages API, with full tool-call and extended-thinking support (thinking shows up as reasoning blocks);
+- **Calls**: the plugin streams requests to the Anthropic Messages API, with full tool-call, extended-thinking, and image support (thinking shows up as reasoning blocks);
 - **Integration**: the plugin registers `claude-subscription` as an LLM provider for dsh web, so the model picker and `/model` recognize it directly.
 
 ## Development

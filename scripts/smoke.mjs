@@ -1,31 +1,46 @@
 /**
- * Smoke test: exercises the wire translation and config without any network.
+ * Smoke test: exercises the wire translation and config without any network
+ * (except the fetchModels test, which mocks `fetch`).
  * Run: node scripts/smoke.mjs
  */
 import assert from 'node:assert/strict';
-import { serializeRequest, serializeMessages, translateAnthropic } from '../lib/anthropic.js';
+import { serializeRequest, serializeMessages, translateAnthropic, fetchModels } from '../lib/anthropic.js';
 import { parseSse } from '../lib/sse.js';
 import { Config, resolveAdapterOptions, DEFAULT_MODELS } from '../lib/config.js';
 import { OAuthManager } from '../lib/oauth.js';
 
 let passed = 0;
+const checks = [];
 function ok(name, fn) {
-  try {
-    fn();
-    passed += 1;
-    console.log(`  ok  ${name}`);
-  } catch (error) {
-    console.error(`FAIL ${name}`);
-    console.error(error);
-    process.exitCode = 1;
-  }
+  checks.push(
+    (async () => {
+      try {
+        await fn();
+        passed += 1;
+        console.log(`  ok  ${name}`);
+      } catch (error) {
+        console.error(`FAIL ${name}`);
+        console.error(error);
+        process.exitCode = 1;
+      }
+    })(),
+  );
 }
+
+/** Image resolver stub: never called unless a message carries an image. */
+const noImages = async () => {
+  throw new Error('unexpected image resolution');
+};
 
 // ── 1. Config schema + resolution ──────────────────────────────────────────
 ok('Config normalizes defaults', () => {
   const resolved = Config({});
   assert.equal(resolved.thinking, 'enabled');
   assert.equal(resolved.models.length, DEFAULT_MODELS.length);
+  // schemastery materializes the optional nested objects as empty objects —
+  // callers must gate on their inner fields, not their presence.
+  assert.deepEqual(resolved.flow, {});
+  assert.deepEqual(resolved.auth, {});
 });
 
 ok('resolveAdapterOptions applies defaults', () => {
@@ -41,7 +56,7 @@ ok('resolveAdapterOptions rejects bad effort', () => {
 });
 
 // ── 2. Message serialization ───────────────────────────────────────────────
-ok('serializeMessages merges roles and hoists system', () => {
+ok('serializeMessages merges roles and hoists system', async () => {
   const messages = [
     { role: 'system', content: [{ type: 'text', text: 'sys1' }] },
     { role: 'user', content: [{ type: 'text', text: 'hello' }] },
@@ -56,7 +71,7 @@ ok('serializeMessages merges roles and hoists system', () => {
     },
     { role: 'user', content: [{ type: 'tool-result', toolCallId: 'call_1', content: [{ type: 'text', text: 'contents' }] }] },
   ];
-  const { system, messages: wire } = serializeMessages(messages);
+  const { system, messages: wire } = await serializeMessages(messages, noImages);
   assert.equal(system, 'sys1');
   assert.equal(wire.length, 3);
   assert.deepEqual(wire[0], { role: 'user', content: [{ type: 'text', text: 'hello again' }] });
@@ -70,8 +85,8 @@ ok('serializeMessages merges roles and hoists system', () => {
   assert.ok(!wire[1].content.some((b) => b.type === 'thinking'));
 });
 
-ok('serializeRequest builds a full body', () => {
-  const body = serializeRequest(
+ok('serializeRequest builds a full body', async () => {
+  const body = await serializeRequest(
     {
       provider: 'claude-subscription',
       model: 'claude-sonnet-4-5',
@@ -83,6 +98,7 @@ ok('serializeRequest builds a full body', () => {
       stop: ['<|end|>'],
     },
     resolveAdapterOptions({}),
+    noImages,
   );
   assert.equal(body.model, 'claude-sonnet-4-5');
   assert.equal(body.stream, true);
@@ -93,12 +109,60 @@ ok('serializeRequest builds a full body', () => {
   assert.equal(body.system, 'be concise');
 });
 
-ok('thinking disabled omits thinking', () => {
-  const body = serializeRequest(
+ok('thinking disabled omits thinking', async () => {
+  const body = await serializeRequest(
     { provider: 'p', model: 'm', messages: [{ role: 'user', content: [{ type: 'text', text: 'x' }] }] },
     resolveAdapterOptions({ thinking: 'disabled', reasoningEffort: 'off' }),
+    noImages,
   );
   assert.equal(body.thinking, undefined);
+});
+
+ok('serializeMessages emits an Anthropic image block', async () => {
+  const messages = [
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'look at this' },
+        { type: 'image', attachment: { attachmentId: 'img-1', mediaType: 'image/png', bytes: 4, width: 1, height: 1 } },
+      ],
+    },
+  ];
+  const resolveImage = async (ref) => {
+    assert.equal(ref.attachmentId, 'img-1');
+    return { mediaType: 'image/png', data: 'aGVsbG8=' };
+  };
+  const { messages: wire } = await serializeMessages(messages, resolveImage);
+  assert.deepEqual(wire[0].content[0], { type: 'text', text: 'look at this' });
+  assert.deepEqual(wire[0].content[1], {
+    type: 'image',
+    source: { type: 'base64', media_type: 'image/png', data: 'aGVsbG8=' },
+  });
+});
+
+ok('fetchModels maps the Anthropic models listing', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    assert.equal(String(url), 'https://api.anthropic.com/v1/models');
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: [
+          { type: 'model', id: 'claude-sonnet-4-5', display_name: 'Claude Sonnet 4.5' },
+          { type: 'model', id: 'claude-haiku-4-5' },
+        ],
+      }),
+    };
+  };
+  try {
+    const models = await fetchModels('https://api.anthropic.com', 'tok');
+    assert.equal(models.length, 2);
+    assert.deepEqual(models[0], { id: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5' });
+    assert.deepEqual(models[1], { id: 'claude-haiku-4-5', name: 'claude-haiku-4-5' });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 // ── 3. SSE parsing ─────────────────────────────────────────────────────────
@@ -185,4 +249,5 @@ ok('OAuthManager beginLogin builds a valid authorize URL', async () => {
   manager.dispose();
 });
 
+await Promise.all(checks);
 console.log(`\n${passed} checks passed`);

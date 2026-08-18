@@ -7,7 +7,7 @@
  * Run: node scripts/host-boot-test.mjs
  */
 import assert from 'node:assert/strict';
-import { apply, name, inject } from '../lib/index.js';
+import { apply, name, inject, runFlowHandshake } from '../lib/index.js';
 import { PROVIDER, NS } from '../lib/config.js';
 
 assert.equal(name, 'llm-claude');
@@ -48,6 +48,9 @@ const llmStub = {
   registerAdapter(providers, adapter) {
     calls.push(['registerAdapter', providers, adapter]);
     return { replace(next) { calls.push(['replace', next]); } };
+  },
+  registerModelDiscovery(ns, discover) {
+    calls.push(['registerModelDiscovery', ns, discover]);
   },
 };
 
@@ -102,6 +105,11 @@ assert.deepEqual(nsReg[2], {}); // composition entry config as base layer
 
 assert.ok(calls.filter((c) => c[0] === 'scope.watch').length >= 2, 'namespace watchers registered');
 
+const discoveryReg = calls.find((c) => c[0] === 'registerModelDiscovery');
+assert.ok(discoveryReg !== undefined, 'registerModelDiscovery not called');
+assert.equal(discoveryReg[1], NS);
+assert.equal(typeof discoveryReg[2], 'function');
+
 const adapterReg = calls.find((c) => c[0] === 'registerAdapter');
 assert.ok(adapterReg !== undefined, 'registerAdapter not called');
 assert.deepEqual(adapterReg[1], [PROVIDER]);
@@ -111,10 +119,40 @@ const adapter = adapterReg[2];
 assert.equal(adapter.providerInfo(PROVIDER).id, PROVIDER);
 const models = await adapter.listModels(PROVIDER);
 assert.ok(Array.isArray(models) && models.length > 0);
+assert.deepEqual(models[0].inputModalities, ['text', 'image']);
 const resolved = await adapter.resolveModel(PROVIDER, 'claude-sonnet-4-5');
 assert.equal(resolved.provider, PROVIDER);
 assert.equal(resolved.context.contextWindow, 200000);
 assert.ok(Array.isArray(resolved.reasoning.efforts));
+assert.deepEqual(resolved.inputModalities, ['text', 'image']);
+
+// ── flow handshake guard: an empty `flow` (schemastery's {} default) ──────
+// must NOT start a login.
+const beginCalls = [];
+const oauthStub = {
+  beginLogin: async (flowId) => {
+    beginCalls.push(flowId);
+    return 'https://claude.ai/oauth/authorize?...';
+  },
+  awaitLogin: () => undefined,
+  cancelLogin: () => {},
+};
+const handshakeScope = { update: async () => {} };
+await runFlowHandshake(
+  { ctx: { get: () => undefined, settings: settingsStub }, oauth: oauthStub, scope: handshakeScope, autoRefreshModels: async () => undefined },
+  { flow: {} },
+  undefined,
+);
+assert.equal(beginCalls.length, 0, 'an empty flow object must not start a login');
+
+// A real flowId (with no url) DOES start a login.
+const flowId = 'flow-123';
+await runFlowHandshake(
+  { ctx: { get: () => undefined, settings: settingsStub }, oauth: oauthStub, scope: handshakeScope, autoRefreshModels: async () => undefined },
+  { flow: { flowId, startedAt: Date.now() } },
+  undefined,
+);
+assert.deepEqual(beginCalls, [flowId]);
 
 // The inject disposer must restore the entry-only source (no crash).
 assert.equal(injectDisposer, undefined); // the callback registers cleanup via sctx.effect

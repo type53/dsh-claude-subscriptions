@@ -22,6 +22,8 @@ OAuth 一键连接 claude.ai，无需 API Key；连接后对话中即可选用 C
 
 - **设置 → 订阅**：点一下按钮，浏览器里完成 claude.ai 授权登录，全程不需要 API Key；
 - 连接后，会话输入框旁的**模型选择器**（或 `/model`）里会出现 Claude 模型，选中即可让 agent 用 Claude 执行任务（代码、写作、分析都可以）；
+- **模型列表会自动从 Anthropic 拉取**（连接后自动更新，也能在「订阅」页手动刷新），无需手动配置模型；
+- **支持图片输入**：贴一张截图或图片，Claude 能直接读取；
 - 登录状态、账号信息、断开连接都在「订阅」页里一目了然；
 - 没有订阅？也支持直接填 **Anthropic API Key** 作为备用。
 
@@ -89,14 +91,14 @@ dsh --profile web
 取决于你的订阅套餐。默认提供 `claude-opus-4-1`、`claude-sonnet-4-5`、`claude-haiku-4-5`，你也可以在配置里自定义列表（见下）。
 
 **支持图片 / 视觉输入吗？**
-暂时不支持，插件目前按纯文本模型接入。
+支持。把图片（PNG / JPEG / WebP / GIF）附到消息里，插件会以 base64 图片块发给 Claude。
 
 **会影响我原来的 DeepSeek 模型吗？**
 完全不会。它只是新增一个模型提供方，两者可以随时切换。
 
 ## 进阶：自定义模型列表（可选）
 
-如果你不想用默认的三个模型，可以在 `$DSH_HOME\settings.yaml` 里加一段 `llm-claude` 配置：
+模型列表会在连接后自动拉取（也可在「订阅」页点「刷新模型列表」）。如果你想手动覆盖，可以在 `$DSH_HOME\settings.yaml` 里加一段 `llm-claude` 配置：
 
 ```yaml
 llm-claude:
@@ -115,7 +117,7 @@ llm-claude:
 ## 工作原理（给好奇的人）
 
 - 登录：与 Claude Code 相同的 **OAuth PKCE** 流程——插件在本地起一个回环回调端口，你在 claude.ai 授权后令牌存进 `$DSH_HOME/.credentials.yaml`；
-- 调用：插件向 Anthropic Messages API 发起流式请求，支持工具调用与 extended thinking（思考内容会显示为 reasoning 块）；
+- 调用：插件向 Anthropic Messages API 发起流式请求，支持工具调用、extended thinking（思考内容会显示为 reasoning 块）与图片输入；
 - 接入：插件把 `claude-subscription` 注册为 dsh web 的一个 LLM provider，所以模型选择器、`/model` 都能直接识别它。
 
 ## 开发
