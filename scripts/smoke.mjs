@@ -243,6 +243,7 @@ ok('OAuthManager beginLogin builds a valid authorize URL', async () => {
   assert.equal(url.searchParams.get('client_id'), 'claude-code-cli');
   assert.equal(url.searchParams.get('response_type'), 'code');
   assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
+  assert.equal(url.searchParams.get('scope'), 'user:profile anthropic:api-access');
   assert.ok(url.searchParams.get('redirect_uri').startsWith('http://127.0.0.1:'));
   assert.ok(url.searchParams.get('state').length > 0);
   assert.ok(url.searchParams.get('code_challenge').length > 0);
