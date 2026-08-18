@@ -1,0 +1,5 @@
+node_modules/
+.pnpm-store/
+.npm-cache/
+.pnpm-home/
+*.log

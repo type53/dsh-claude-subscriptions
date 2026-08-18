@@ -1,0 +1,10 @@
+# dsh-claude-subscriptions bundle patch
+#
+# This file is the `dsh.bundle.patch` layer of the package: when the plugin is
+# installed into a dsh profile (here: the web profile), the profile boot merges
+# this patch and mounts the plugin row. One host row; the browser half is
+# picked up by the `dsh.client` declaration in package.json (served as
+# /plugins/<id>/client.js and composed into window.__DSH_BOOT__).
+- insert:
+    - id: llm-claude
+      name: 'dsh-claude-subscriptions'

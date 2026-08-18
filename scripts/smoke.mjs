@@ -1,0 +1,188 @@
+/**
+ * Smoke test: exercises the wire translation and config without any network.
+ * Run: node scripts/smoke.mjs
+ */
+import assert from 'node:assert/strict';
+import { serializeRequest, serializeMessages, translateAnthropic } from '../lib/anthropic.js';
+import { parseSse } from '../lib/sse.js';
+import { Config, resolveAdapterOptions, DEFAULT_MODELS } from '../lib/config.js';
+import { OAuthManager } from '../lib/oauth.js';
+
+let passed = 0;
+function ok(name, fn) {
+  try {
+    fn();
+    passed += 1;
+    console.log(`  ok  ${name}`);
+  } catch (error) {
+    console.error(`FAIL ${name}`);
+    console.error(error);
+    process.exitCode = 1;
+  }
+}
+
+// ── 1. Config schema + resolution ──────────────────────────────────────────
+ok('Config normalizes defaults', () => {
+  const resolved = Config({});
+  assert.equal(resolved.thinking, 'enabled');
+  assert.equal(resolved.models.length, DEFAULT_MODELS.length);
+});
+
+ok('resolveAdapterOptions applies defaults', () => {
+  const opts = resolveAdapterOptions({});
+  assert.equal(opts.baseURL, 'https://api.anthropic.com');
+  assert.equal(opts.apiKeyEnv, undefined);
+  assert.equal(opts.defaults.thinking, 'enabled');
+  assert.ok(opts.retryPolicy);
+});
+
+ok('resolveAdapterOptions rejects bad effort', () => {
+  assert.throws(() => resolveAdapterOptions({ thinking: 'disabled', reasoningEffort: 'high' }));
+});
+
+// ── 2. Message serialization ───────────────────────────────────────────────
+ok('serializeMessages merges roles and hoists system', () => {
+  const messages = [
+    { role: 'system', content: [{ type: 'text', text: 'sys1' }] },
+    { role: 'user', content: [{ type: 'text', text: 'hello' }] },
+    { role: 'user', content: [{ type: 'text', text: ' again' }] },
+    {
+      role: 'assistant',
+      content: [
+        { type: 'reasoning', text: 'hidden thinking' },
+        { type: 'text', text: 'let me check' },
+        { type: 'tool-call', id: 'call_1', name: 'read_file', arguments: '{"path":"a.js"}' },
+      ],
+    },
+    { role: 'user', content: [{ type: 'tool-result', toolCallId: 'call_1', content: [{ type: 'text', text: 'contents' }] }] },
+  ];
+  const { system, messages: wire } = serializeMessages(messages);
+  assert.equal(system, 'sys1');
+  assert.equal(wire.length, 3);
+  assert.deepEqual(wire[0], { role: 'user', content: [{ type: 'text', text: 'hello again' }] });
+  assert.deepEqual(wire[1].content[1], { type: 'tool_use', id: 'call_1', name: 'read_file', input: { path: 'a.js' } });
+  assert.deepEqual(wire[2].content[0], {
+    type: 'tool_result',
+    tool_use_id: 'call_1',
+    content: 'contents',
+  });
+  // reasoning was dropped
+  assert.ok(!wire[1].content.some((b) => b.type === 'thinking'));
+});
+
+ok('serializeRequest builds a full body', () => {
+  const body = serializeRequest(
+    {
+      provider: 'claude-subscription',
+      model: 'claude-sonnet-4-5',
+      system: 'be concise',
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+      tools: [{ name: 'read', description: 'read a file', parameters: { type: 'object' } }],
+      reasoningEffort: 'high',
+      maxTokens: 16000,
+      stop: ['<|end|>'],
+    },
+    resolveAdapterOptions({}),
+  );
+  assert.equal(body.model, 'claude-sonnet-4-5');
+  assert.equal(body.stream, true);
+  assert.equal(body.max_tokens, 16000);
+  assert.deepEqual(body.thinking, { type: 'enabled', budget_tokens: 12000 });
+  assert.equal(body.temperature, undefined);
+  assert.deepEqual(body.stop_sequences, ['<|end|>']);
+  assert.equal(body.system, 'be concise');
+});
+
+ok('thinking disabled omits thinking', () => {
+  const body = serializeRequest(
+    { provider: 'p', model: 'm', messages: [{ role: 'user', content: [{ type: 'text', text: 'x' }] }] },
+    resolveAdapterOptions({ thinking: 'disabled', reasoningEffort: 'off' }),
+  );
+  assert.equal(body.thinking, undefined);
+});
+
+// ── 3. SSE parsing ─────────────────────────────────────────────────────────
+ok('parseSse splits CRLF and multi-line data', async () => {
+  const bytes = new TextEncoder().encode(
+    'event: content_block_delta\r\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"hi"}}\r\n\r\n' +
+      'data: line1\r\ndata: line2\r\n\r\n' +
+      ': keepalive comment\r\n\r\n',
+  );
+  const events = [];
+  for await (const event of parseSse([bytes])) events.push(event);
+  assert.equal(events.length, 2);
+  assert.equal(events[0].event, 'content_block_delta');
+  assert.equal(events[1].data, 'line1\nline2');
+});
+
+// ── 4. SSE → StreamChunk translation ───────────────────────────────────────
+ok('translateAnthropic maps a text + thinking + tool stream', async () => {
+  const events = (async function* () {
+    yield { event: 'message_start', data: JSON.stringify({ type: 'message_start', message: { usage: { input_tokens: 12, cache_read_input_tokens: 3 } } }) };
+    yield { event: 'content_block_start', data: JSON.stringify({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } }) };
+    yield { event: 'content_block_delta', data: JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'so ' } }) };
+    yield { event: 'content_block_delta', data: JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'far' } }) };
+    yield { event: 'content_block_stop', data: JSON.stringify({ type: 'content_block_stop', index: 0 }) };
+    yield { event: 'content_block_start', data: JSON.stringify({ type: 'content_block_start', index: 1, content_block: { type: 'text', text: '' } }) };
+    yield { event: 'content_block_delta', data: JSON.stringify({ type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'Sure' } }) };
+    yield { event: 'content_block_stop', data: JSON.stringify({ type: 'content_block_stop', index: 1 }) };
+    yield { event: 'content_block_start', data: JSON.stringify({ type: 'content_block_start', index: 2, content_block: { type: 'tool_use', id: 'toolu_1', name: 'read', input: {} } }) };
+    yield { event: 'content_block_delta', data: JSON.stringify({ type: 'content_block_delta', index: 2, delta: { type: 'input_json_delta', partial_json: '{"p":' } }) };
+    yield { event: 'content_block_delta', data: JSON.stringify({ type: 'content_block_delta', index: 2, delta: { type: 'input_json_delta', partial_json: '"x"}' } }) };
+    yield { event: 'content_block_stop', data: JSON.stringify({ type: 'content_block_stop', index: 2 }) };
+    yield { event: 'message_delta', data: JSON.stringify({ type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 33 } }) };
+    yield { event: 'message_stop', data: JSON.stringify({ type: 'message_stop' }) };
+  })();
+  const chunks = [];
+  for await (const chunk of translateAnthropic(events)) chunks.push(chunk);
+  const types = chunks.map((c) => c.type);
+  assert.ok(types.includes('block-start'));
+  assert.ok(types.includes('reasoning-delta'));
+  assert.ok(types.includes('text-delta'));
+  assert.ok(types.includes('tool-call-delta'));
+  const reasoningBlockEnd = chunks.find((c) => c.type === 'block-end' && c.block.type === 'reasoning');
+  assert.equal(reasoningBlockEnd.block.text, 'so far');
+  const toolDelta = chunks.find((c) => c.type === 'tool-call-delta');
+  assert.equal(toolDelta.id, 'toolu_1');
+  assert.equal(toolDelta.name, 'read');
+  const blockEnd = chunks.find((c) => c.type === 'block-end' && c.block.type === 'tool-call');
+  assert.equal(blockEnd.block.arguments, '{"p":"x"}');
+  const usage = chunks.find((c) => c.type === 'usage');
+  assert.equal(usage.usage.inputTokens, 12);
+  assert.equal(usage.usage.cacheReadTokens, 3);
+  assert.equal(usage.usage.outputTokens, 33);
+  const finish = chunks.at(-1);
+  assert.deepEqual(finish, { type: 'finish', reason: { kind: 'tool-calls' } });
+});
+
+ok('translateAnthropic errors on truncation', async () => {
+  const events = (async function* () {
+    yield { event: 'message_start', data: JSON.stringify({ type: 'message_start', message: { usage: {} } }) };
+  })();
+  const chunks = [];
+  let threw = false;
+  try {
+    for await (const chunk of translateAnthropic(events)) chunks.push(chunk);
+  } catch {
+    threw = true;
+  }
+  assert.ok(threw);
+});
+
+// ── 5. OAuth helpers (no network) ──────────────────────────────────────────
+ok('OAuthManager beginLogin builds a valid authorize URL', async () => {
+  const manager = new OAuthManager();
+  const urlText = await manager.beginLogin('flow-1');
+  const url = new URL(urlText);
+  assert.equal(url.origin, 'https://claude.ai');
+  assert.equal(url.pathname, '/oauth/authorize');
+  assert.equal(url.searchParams.get('client_id'), 'claude-code-cli');
+  assert.equal(url.searchParams.get('response_type'), 'code');
+  assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
+  assert.ok(url.searchParams.get('redirect_uri').startsWith('http://127.0.0.1:'));
+  assert.ok(url.searchParams.get('state').length > 0);
+  assert.ok(url.searchParams.get('code_challenge').length > 0);
+  manager.dispose();
+});
+
+console.log(`\n${passed} checks passed`);
