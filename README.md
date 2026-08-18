@@ -38,7 +38,7 @@ cd "$env:USERPROFILE\.dsh\profiles\web"
 pnpm install
 ```
 
-### 方式 B：发布到 npm 后用官方 CLI（推荐给最终用户）
+### 方式 B：发布到 npm 后用官方 CLI（推荐）
 
 ```bash
 # 插件作者发布后，使用者一条命令即可：
