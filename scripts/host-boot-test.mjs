@@ -52,6 +52,7 @@ const llmStub = {
 };
 
 let injectDisposer = null;
+const subEffects = [];
 const ctx = {
   get(name) {
     if (name === 'credentials') return credentialsStub;
@@ -61,7 +62,15 @@ const ctx = {
   inject(keys, callback) {
     injectedKeys.push(keys);
     // Simulate the settings service already being available.
-    const sub = { settings: settingsStub, get: (n) => (n === 'credentials' ? credentialsStub : undefined) };
+    const sub = {
+      settings: settingsStub,
+      get: (n) => (n === 'credentials' ? credentialsStub : undefined),
+      effect(fn) {
+        const disposer = fn();
+        subEffects.push(disposer);
+        if (typeof disposer === 'function') disposer();
+      },
+    };
     injectDisposer = callback(sub);
   },
   effect(fn) {
@@ -108,7 +117,10 @@ assert.equal(resolved.context.contextWindow, 200000);
 assert.ok(Array.isArray(resolved.reasoning.efforts));
 
 // The inject disposer must restore the entry-only source (no crash).
-assert.equal(typeof injectDisposer, 'function');
-injectDisposer();
+assert.equal(injectDisposer, undefined); // the callback registers cleanup via sctx.effect
+assert.ok(subEffects.length >= 2, 'sub-context effects registered');
+for (const disposer of subEffects) {
+  if (typeof disposer === 'function') disposer();
+}
 
 console.log('host plugin boot test passed');
