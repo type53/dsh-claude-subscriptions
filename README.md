@@ -21,7 +21,7 @@ Reuse your Claude subscription (Pro / Max) from DeepSeek Harness web — the plu
 If you already have a **Claude Pro / Max subscription** and use **DeepSeek Harness web** day-to-day, this plugin lets you switch models in the same interface:
 
 - **Settings → Subscriptions** shows your live subscription status (account, plan, rate-limit tier) — read straight from your **Claude Code login** (`~/.claude/.credentials.json`), no popup login;
-- No Claude Code login handy? Paste a token from **`claude setup-token`** (the supported way to use your subscription outside Claude Code) and the plugin uses it;
+- No Claude Code login handy? Paste a token from **`claude setup-token`** (an official Anthropic command for using your subscription with SDKs/APIs — subject to the subscription terms and model entitlements) and the plugin uses it;
 - Once a token is available, Claude models show up in the **model picker** next to the input box (or `/model`) — select one and the agent works with Claude, whether it's code, writing, or analysis;
 - The **model list is fetched from Anthropic automatically** and can be refreshed from the Subscriptions tab;
 - **Image input** is supported: attach a screenshot or image and Claude reads it;

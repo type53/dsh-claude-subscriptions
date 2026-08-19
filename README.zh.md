@@ -21,7 +21,7 @@ English · [简体中文](README.zh.md)
 如果你**已经有 Claude Pro / Max 订阅**，并且平时用 **DeepSeek Harness web** 干活，这个插件能让你在同一个界面里按需切换模型：
 
 - **设置 → 订阅**：直接显示你当前的订阅状态（账号、订阅类型、限流档位），读取自 **Claude Code 登录**（`~/.claude/.credentials.json`），无需弹窗登录；
-- 没有 Claude Code 登录？把 **`claude setup-token`** 输出的令牌粘贴到「订阅」页即可（这是官方支持的"在 Claude Code 之外使用订阅"的方式）；
+- 没有 Claude Code 登录？把 **`claude setup-token`** 输出的令牌粘贴到「订阅」页即可（该命令由 Anthropic 官方提供，用于在 SDK/API 场景使用订阅，但受订阅条款与模型配额限制）；
 - 有可用令牌后，会话输入框旁的**模型选择器**（或 `/model`）里会出现 Claude 模型，选中即可让 agent 用 Claude 执行任务；
 - **模型列表会自动从 Anthropic 拉取**（也能在「订阅」页手动刷新）；
 - **支持图片输入**：贴一张截图或图片，Claude 能直接读取；

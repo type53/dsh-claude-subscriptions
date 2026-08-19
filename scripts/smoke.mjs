@@ -295,6 +295,51 @@ ok('adapter stream surfaces the real transport error (no idleTimedOut ReferenceE
   }
 });
 
+ok('adapter distinguishes entitlement 429 from a genuine rate limit', async () => {
+  const { ClaudeAdapter } = await import('../lib/adapter.js');
+  const originalFetch = globalThis.fetch;
+  const run = async (headers) => {
+    globalThis.fetch = async () => ({
+      ok: false,
+      status: 429,
+      headers: new Headers(headers),
+      json: async () => ({ error: { type: 'rate_limit_error', message: 'Error' } }),
+    });
+    const adapter = new ClaudeAdapter({
+      options: () => resolveAdapterOptions({}),
+      resolveSubscriptionToken: async () => ({ kind: 'subscription', token: 'tok', source: 'pasted' }),
+      getCredentials: () => undefined,
+      getAttachments: () => undefined,
+      launchEnvironment: undefined,
+      resolveUserId: () => 'u',
+    });
+    let threw = null;
+    try {
+      for await (const _c of adapter.stream({
+        provider: 'claude-subscription',
+        model: 'claude-opus-5',
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+      })) {
+        // no chunks on 429
+      }
+    } catch (error) {
+      threw = error;
+    }
+    assert.ok(threw instanceof Error, 'expected an error');
+    return String(threw.message);
+  };
+  try {
+    // No rate-limit headers → entitlement rejection.
+    const entitlementMessage = await run({});
+    assert.ok(/无权|entitlement/i.test(entitlementMessage) || /haiku/i.test(entitlementMessage), `entitlement wording expected, got: ${entitlementMessage}`);
+    // With rate-limit headers → genuine rate limit.
+    const rateLimitedMessage = await run({ 'anthropic-ratelimit-requests-remaining': '0' });
+    assert.ok(/频繁|429/.test(rateLimitedMessage), `rate-limit wording expected, got: ${rateLimitedMessage}`);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 ok('adapter falls back to no-thinking when a model rejects adaptive thinking', async () => {
   const { ClaudeAdapter } = await import('../lib/adapter.js');
   const originalFetch = globalThis.fetch;
