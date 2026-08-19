@@ -21,7 +21,7 @@ Reuse your Claude subscription (Pro / Max) from DeepSeek Harness web — the plu
 If you already have a **Claude Pro / Max subscription** and use **DeepSeek Harness web** day-to-day, this plugin lets you switch models in the same interface:
 
 - **Settings → Subscriptions** shows your live subscription status (account, plan, rate-limit tier) — read straight from your **Claude Code login** (`~/.claude/.credentials.json`), no popup login;
-- **Two modes**: *token mode* calls the Messages API directly (subscription tokens usually allow haiku only); *console mode* drives the official `claude` CLI, keeping the first-party entitlement so **opus/sonnet work**;
+- **Three modes**: *token mode* calls the Messages API directly (subscription tokens usually allow haiku only); *console mode* drives the official `claude` CLI (opus/sonnet work, no approval loop); *SDK mode* hosts a Claude Code agent via the official SDK with **every tool use routed through the harness approval channel** (opus/sonnet work, full approval + visibility);
 - No Claude Code login handy? Paste a token from **`claude setup-token`** (an official Anthropic command for using your subscription with SDKs/APIs — subject to the subscription terms and model entitlements) and the plugin uses it;
 - Once a token is available, Claude models show up in the **model picker** next to the input box (or `/model`) — select one and the agent works with Claude, whether it's code, writing, or analysis;
 - The **model list is fetched from Anthropic automatically** and can be refreshed from the Subscriptions tab;
@@ -117,7 +117,8 @@ The model list refreshes automatically after you connect (and via the **Refresh 
 
 ```yaml
 llm-claude:
-  mode: console                 # token | console (Claude Code console mode)
+  mode: console                 # token | console | sdk (Claude Code console /
+                                # Claude Agent SDK with approval)
   consoleSystemPrompt: ""       # optional custom persona for console mode;
                                 # unset = Claude Code uses its own system prompt
                                 # (the harness prompt is NOT injected, so no

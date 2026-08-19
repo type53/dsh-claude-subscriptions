@@ -21,7 +21,7 @@ English · [简体中文](README.zh.md)
 如果你**已经有 Claude Pro / Max 订阅**，并且平时用 **DeepSeek Harness web** 干活，这个插件能让你在同一个界面里按需切换模型：
 
 - **设置 → 订阅**：直接显示你当前的订阅状态（账号、订阅类型、限流档位），读取自 **Claude Code 登录**（`~/.claude/.credentials.json`），无需弹窗登录；
-- **两种模式**：*令牌模式* 直连 Messages API（订阅令牌通常只放行 haiku）；*控制台模式* 驱动官方 `claude` CLI，保留第一方客户端资格，**opus/sonnet 可用**；
+- **三种模式**：*令牌模式* 直连 Messages API（订阅令牌通常只放行 haiku）；*控制台模式* 驱动官方 `claude` CLI（opus/sonnet 可用，无审批）；*SDK 模式* 经官方 Claude Agent SDK 托管代理，**每个工具调用都经 harness 审批通道**（opus/sonnet 可用，有审批与可见性）；
 - 没有 Claude Code 登录？把 **`claude setup-token`** 输出的令牌粘贴到「订阅」页即可（该命令由 Anthropic 官方提供，用于在 SDK/API 场景使用订阅，但受订阅条款与模型配额限制）；
 - 有可用令牌后，会话输入框旁的**模型选择器**（或 `/model`）里会出现 Claude 模型，选中即可让 agent 用 Claude 执行任务；
 - **模型列表会自动从 Anthropic 拉取**（也能在「订阅」页手动刷新）；
@@ -117,7 +117,8 @@ dsh --profile web
 
 ```yaml
 llm-claude:
-  mode: console                 # token | console（Claude Code 控制台模式）
+  mode: console                 # token | console | sdk（Claude Code 控制台 /
+                                # Claude Agent SDK 审批模式）
   consoleSystemPrompt: ""       # 可选：控制台模式的自定义人格；不设置时
                                 # Claude Code 使用自己的系统提示（harness 提示
                                 # 不注入，claude 进程不会看到 dsh/harness 内容）

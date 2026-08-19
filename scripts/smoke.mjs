@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { serializeRequest, serializeMessages, translateAnthropic, fetchModels } from '../lib/anthropic.js';
 import { parseSse } from '../lib/sse.js';
 import { buildTranscript, mapEvent } from '../lib/cc-console.js';
+import { buildSdkOptions, mapSdkMessage } from '../lib/cc-sdk.js';
 import { Config, resolveAdapterOptions, DEFAULT_MODELS } from '../lib/config.js';
 import { AUTH_REF, LOGIN_REF, resolveSubscriptionToken, claudeCodeStatus } from '../lib/auth.js';
 
@@ -251,6 +252,60 @@ ok('mapEvent translates claude stream-json events', () => {
   });
   assert.equal(errorChunks.at(-1).reason.kind, 'error');
   assert.ok(String(errorChunks.at(-1).reason.failure.message).includes('No conversation'));
+});
+
+ok('mapSdkMessage translates Claude Agent SDK messages', () => {
+  const textChunks = mapSdkMessage({
+    type: 'assistant',
+    message: { content: [
+      { type: 'text', text: 'done' },
+      { type: 'tool_use', id: 't', name: 'Bash', input: { command: 'x' } },
+    ] },
+  });
+  assert.deepEqual(textChunks.map((c) => c.type), ['block-start', 'text-delta', 'block-end']);
+  assert.equal(textChunks.find((c) => c.type === 'text-delta').text, 'done');
+
+  const okChunks = mapSdkMessage({
+    type: 'result',
+    is_error: false,
+    usage: { input_tokens: 2, output_tokens: 1 },
+  });
+  assert.deepEqual(okChunks.at(-1), { type: 'finish', reason: { kind: 'stop' } });
+
+  const errorChunks = mapSdkMessage({ type: 'result', is_error: true, errors: ['boom'] });
+  assert.equal(errorChunks.at(-1).reason.kind, 'error');
+});
+
+ok('buildSdkOptions forces every tool through the approval gate', async () => {
+  const asks = [];
+  let askCount = 0;
+  const sdkOptions = buildSdkOptions(
+    { model: 'claude-opus-5', messages: [] },
+    {
+      askUser: async (item) => {
+        asks.push(item);
+        askCount += 1;
+        return { answers: [{ id: item.id, selected: [askCount === 1 ? '允许' : '拒绝'] }] };
+      },
+    },
+  );
+  assert.equal(sdkOptions.model, 'claude-opus-5');
+  assert.ok(sdkOptions.settings.permissions.ask.includes('Bash'));
+  assert.ok(sdkOptions.settings.permissions.ask.includes('Edit'));
+  assert.equal(sdkOptions.settings.permissions.disableBypassPermissionsMode, 'disable');
+
+  const allowed = await sdkOptions.canUseTool('Bash', { command: 'echo x' }, { toolUseID: 't1', requestId: 'r1' });
+  assert.equal(allowed.behavior, 'allow');
+  assert.equal(asks.length, 1);
+  assert.ok(String(asks[0].question).length > 0);
+
+  const denied = await sdkOptions.canUseTool('Edit', { file_path: 'a' }, { toolUseID: 't2', requestId: 'r2' });
+  assert.equal(denied.behavior, 'deny');
+
+  // Fail-closed: an unanswerable permission request denies the tool.
+  const failed = await buildSdkOptions({ model: 'm', messages: [] }, { askUser: async () => { throw new Error('no UI'); } })
+    .canUseTool('Bash', {}, { toolUseID: 't3', requestId: 'r3' });
+  assert.equal(failed.behavior, 'deny');
 });
 
 // ── 3. SSE parsing ─────────────────────────────────────────────────────────
