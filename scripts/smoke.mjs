@@ -266,6 +266,45 @@ ok('translateAnthropic errors on truncation', async () => {
   assert.ok(threw);
 });
 
+ok('adapter stream surfaces the real transport error (no idleTimedOut ReferenceError)', async () => {
+  const { ClaudeAdapter } = await import('../lib/adapter.js');
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 500,
+    headers: new Headers(),
+    json: async () => ({ error: { message: 'boom' } }),
+  });
+  try {
+    const adapter = new ClaudeAdapter({
+      options: () => resolveAdapterOptions({}),
+      resolveSubscriptionToken: async () => ({ kind: 'subscription', token: 'tok', source: 'pasted' }),
+      getCredentials: () => undefined,
+      getAttachments: () => undefined,
+      launchEnvironment: undefined,
+      resolveUserId: () => 'u',
+    });
+    let threw = null;
+    try {
+      for await (const _chunk of adapter.stream({
+        provider: 'claude-subscription',
+        model: 'claude-sonnet-5',
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+      })) {
+        // no chunks expected on a 500
+      }
+    } catch (error) {
+      threw = error;
+    }
+    assert.ok(threw instanceof Error, 'expected an error from the 500 response');
+    const message = String(threw?.message ?? threw);
+    assert.ok(!/idleTimedOut is not defined/.test(message), 'must not be the scoping ReferenceError');
+    assert.equal(threw.code, 'SERVER', 'should carry the mapped HTTP error code');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 // ── 5. Subscription token sources (temp file + mocked credentials) ─────────
 const tmpDir = await mkdtemp(join(tmpdir(), 'dsh-claude-smoke-'));
 const filePath = join(tmpDir, '.credentials.json');
