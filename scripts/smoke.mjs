@@ -14,20 +14,10 @@ import { AUTH_REF, LOGIN_REF, resolveSubscriptionToken, claudeCodeStatus } from 
 
 let passed = 0;
 const checks = [];
+// Deferred execution: tests run sequentially so global state (the `fetch`
+// mock, temp files) cannot race between tests.
 function ok(name, fn) {
-  checks.push(
-    (async () => {
-      try {
-        await fn();
-        passed += 1;
-        console.log(`  ok  ${name}`);
-      } catch (error) {
-        console.error(`FAIL ${name}`);
-        console.error(error);
-        process.exitCode = 1;
-      }
-    })(),
-  );
+  checks.push([name, fn]);
 }
 
 /** Image resolver stub: never called unless a message carries an image. */
@@ -42,8 +32,8 @@ ok('Config normalizes defaults', () => {
   assert.equal(resolved.models.length, DEFAULT_MODELS.length);
   // schemastery materializes the optional nested objects as empty objects —
   // callers must gate on their inner fields, not their presence.
-  assert.deepEqual(resolved.flow, {});
-  assert.deepEqual(resolved.auth, {});
+  assert.deepEqual(resolved.status, {});
+  assert.deepEqual(resolved.refresh, {});
 });
 
 ok('resolveAdapterOptions applies defaults', () => {
@@ -305,6 +295,61 @@ ok('adapter stream surfaces the real transport error (no idleTimedOut ReferenceE
   }
 });
 
+ok('adapter falls back to no-thinking when a model rejects adaptive thinking', async () => {
+  const { ClaudeAdapter } = await import('../lib/adapter.js');
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  const sseOk = () => {
+    const text =
+      'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":1,"output_tokens":0}}}\n\n' +
+      'event: message_stop\ndata: {"type":"message_stop"}\n\n';
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(text));
+        controller.close();
+      },
+    });
+    return { ok: true, status: 200, headers: new Headers(), body: stream };
+  };
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url: String(url), body: JSON.parse(options.body) });
+    if (calls.length === 1) {
+      return {
+        ok: false,
+        status: 400,
+        headers: new Headers(),
+        json: async () => ({ error: { type: 'invalid_request_error', message: 'adaptive thinking is not supported on this model' } }),
+      };
+    }
+    return sseOk();
+  };
+  try {
+    const adapter = new ClaudeAdapter({
+      options: () => resolveAdapterOptions({}),
+      resolveSubscriptionToken: async () => ({ kind: 'subscription', token: 'tok', source: 'pasted' }),
+      getCredentials: () => undefined,
+      getAttachments: () => undefined,
+      launchEnvironment: undefined,
+      resolveUserId: () => 'u',
+    });
+    const chunks = [];
+    for await (const chunk of adapter.stream({
+      provider: 'claude-subscription',
+      model: 'claude-haiku-4-5',
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+    })) {
+      chunks.push(chunk.type);
+    }
+    assert.equal(calls.length, 2, 'should retry once without thinking');
+    assert.deepEqual(calls[0].body.output_config, { effort: 'high' }, 'first attempt uses the effort API');
+    assert.equal(calls[1].body.output_config, undefined, 'fallback drops output_config');
+    assert.equal(calls[1].body.thinking, undefined, 'fallback drops thinking');
+    assert.ok(chunks.includes('finish'), 'the fallback stream completes');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 // ── 5. Subscription token sources (temp file + mocked credentials) ─────────
 const tmpDir = await mkdtemp(join(tmpdir(), 'dsh-claude-smoke-'));
 const filePath = join(tmpDir, '.credentials.json');
@@ -413,6 +458,16 @@ ok('claudeCodeStatus is undefined without a login file', async () => {
   assert.equal(status, undefined);
 });
 
-await Promise.all(checks);
+for (const [name, fn] of checks) {
+  try {
+    await fn();
+    passed += 1;
+    console.log(`  ok  ${name}`);
+  } catch (error) {
+    console.error(`FAIL ${name}`);
+    console.error(error);
+    process.exitCode = 1;
+  }
+}
 await rm(tmpDir, { recursive: true, force: true });
 console.log(`\n${passed} checks passed`);

@@ -1,6 +1,6 @@
 {
   "name": "dsh-claude-subscriptions",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Use a Claude (Anthropic) subscription in DeepSeek Harness web — reuse the local Claude Code login or a `claude setup-token` token, with an API key fallback.",
   "type": "module",
   "repository": {

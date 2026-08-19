@@ -89,6 +89,12 @@ dsh --profile web
 **使用时报 401 / 令牌过期？**
 插件会自动续期 Claude Code 令牌（轮换安全：新令牌会写回凭据文件）。如果续期失败，重新运行 `claude login`。
 
+**Opus / Sonnet 报「Retry delay / Failure reason: Error」？**
+那个 "Error" 是 Anthropic 对 `rate_limit_error` 返回的极简消息——订阅 API 对 opus/sonnet 的配额极少（常常为零），haiku 通常可用。这是 Anthropic 对订阅 API 使用旗舰模型的策略限制：通过本插件建议用 haiku，旗舰模型请用付费 API Key。
+
+**haiku 报「adaptive thinking is not supported」？**
+老模型不支持新版思考 API。插件会自动检测并降级为关闭思考重试。
+
 **「订阅」页有登录信息，但模型选择器里没有 Claude？**
 重启一次 dsh web，再在 `/model` 里搜索 `claude`。
 

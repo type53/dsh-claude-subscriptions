@@ -89,6 +89,12 @@ The stored login expired or was invalidated. Run `claude login` once in a termin
 **401 / token expired while using it?**
 The plugin auto-refreshes the Claude Code token (rotation-safe: the new token is written back to the credentials file). If refresh fails, re-run `claude login`.
 
+**Opus / Sonnet fail with "Retry delay / Failure reason: Error"?**
+That "Error" is Anthropic's own terse message for `rate_limit_error` — the subscription API gives opus/sonnet very little (often zero) quota. Haiku is typically available. Anthropic policy restricts flagship-model API usage for subscriptions; use haiku through the plugin, or a paid API key for premium models.
+
+**Haiku errors with "adaptive thinking is not supported"?**
+Older models reject the modern thinking API. The plugin detects this and automatically retries with thinking disabled.
+
 **The tab shows a login, but no Claude models in the picker?**
 Restart dsh web once, then search `claude` in `/model`. The picker lists models from the provider catalog, which loads on the first request.
 
