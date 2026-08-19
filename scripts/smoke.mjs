@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { serializeRequest, serializeMessages, translateAnthropic, fetchModels } from '../lib/anthropic.js';
 import { parseSse } from '../lib/sse.js';
 import { Config, resolveAdapterOptions, DEFAULT_MODELS } from '../lib/config.js';
+import { ClaudeAdapter } from '../lib/adapter.js';
 import { OAuthManager } from '../lib/oauth.js';
 
 let passed = 0;
@@ -231,6 +232,126 @@ ok('translateAnthropic errors on truncation', async () => {
     threw = true;
   }
   assert.ok(threw);
+});
+
+// ── 4b. Regressions ────────────────────────────────────────────────────────
+ok('stream() reports the real failure, not a scope crash', async () => {
+  // No OAuth session, no credentials service, no apiKeyEnv → resolveAuth throws
+  // before the watchdog exists, which is exactly the path that used to hit a
+  // `catch` reading a `let` declared inside the `try`.
+  const adapter = new ClaudeAdapter({
+    options: () => resolveAdapterOptions({}),
+    getCredentials: () => undefined,
+    getAttachments: () => undefined,
+    launchEnvironment: undefined,
+    resolveOAuthToken: async () => undefined,
+    resolveUserId: () => 'test-user',
+  });
+  let caught;
+  try {
+    for await (const _chunk of adapter.stream({
+      provider: 'claude-subscription',
+      model: 'claude-opus-5',
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+    })) {
+      throw new Error('expected no chunks');
+    }
+  } catch (error) {
+    caught = error;
+  }
+  assert.ok(caught !== undefined, 'stream() should have thrown');
+  assert.ok(!(caught instanceof ReferenceError), `scope bug regressed: ${caught.message}`);
+  assert.equal(caught.code, 'MISSING_CREDENTIAL');
+});
+
+ok('parseSse keeps concurrent streams isolated', async () => {
+  const encoder = new TextEncoder();
+  const first = encoder.encode('data: {"t":"你好世界"}\n\n');
+  const second = encoder.encode('data: {"t":"再见朋友"}\n\n');
+  // Split mid-character: a decoder shared across streams bleeds the partial
+  // sequence into whichever stream decodes next.
+  const streamOf = (bytes) =>
+    (async function* () {
+      yield bytes.slice(0, 13);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      yield bytes.slice(13);
+    })();
+  const collect = async (input) => {
+    const out = [];
+    for await (const event of parseSse(input)) out.push(event.data);
+    return out;
+  };
+  const [a, b] = await Promise.all([collect(streamOf(first)), collect(streamOf(second))]);
+  assert.deepEqual(a, ['{"t":"你好世界"}']);
+  assert.deepEqual(b, ['{"t":"再见朋友"}']);
+});
+
+ok('thinking API is selected per model generation', async () => {
+  const defaults = resolveAdapterOptions({});
+  const thinkingType = async (model) => {
+    const body = await serializeRequest(
+      {
+        provider: 'p',
+        model,
+        reasoningEffort: 'high',
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'x' }] }],
+      },
+      defaults,
+      noImages,
+    );
+    return body.thinking?.type;
+  };
+  for (const model of ['claude-opus-5', 'claude-sonnet-5', 'claude-fable-5', 'claude-opus-4-8', 'claude-opus-4-6', 'claude-sonnet-4-6']) {
+    assert.equal(await thinkingType(model), 'adaptive', `${model} must use adaptive thinking`);
+  }
+  for (const model of ['claude-sonnet-4-5', 'claude-haiku-4-5', 'claude-opus-4-1', 'claude-3-7-sonnet-20250219']) {
+    assert.equal(await thinkingType(model), 'enabled', `${model} must use budget_tokens`);
+  }
+});
+
+ok('adaptive models omit budget_tokens and temperature', async () => {
+  const body = await serializeRequest(
+    {
+      provider: 'p',
+      model: 'claude-opus-5',
+      temperature: 0.7,
+      reasoningEffort: 'max',
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'x' }] }],
+    },
+    resolveAdapterOptions({}),
+    noImages,
+  );
+  assert.deepEqual(body.thinking, { type: 'adaptive', display: 'summarized' });
+  assert.deepEqual(body.output_config, { effort: 'max' });
+  assert.equal(body.thinking.budget_tokens, undefined);
+  assert.equal(body.temperature, undefined, 'sampling params are rejected on 4.6+');
+});
+
+ok('pre-4.6 models still accept temperature with thinking off', async () => {
+  const body = await serializeRequest(
+    {
+      provider: 'p',
+      model: 'claude-sonnet-4-5',
+      temperature: 0.7,
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'x' }] }],
+    },
+    resolveAdapterOptions({ thinking: 'disabled', reasoningEffort: 'off' }),
+    noImages,
+  );
+  assert.equal(body.thinking, undefined);
+  assert.equal(body.temperature, 0.7);
+});
+
+ok('default catalog ships no retired models', () => {
+  const retired = new Set([
+    'claude-opus-4-1',
+    'claude-3-7-sonnet-20250219',
+    'claude-3-5-haiku-20241022',
+    'claude-3-opus-20240229',
+  ]);
+  for (const model of DEFAULT_MODELS) {
+    assert.ok(!retired.has(model.id), `${model.id} is retired and 404s`);
+  }
 });
 
 // ── 5. OAuth helpers (no network) ──────────────────────────────────────────
