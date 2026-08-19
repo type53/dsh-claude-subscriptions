@@ -8,24 +8,18 @@ import { serializeRequest, serializeMessages, translateAnthropic, fetchModels } 
 import { parseSse } from '../lib/sse.js';
 import { Config, resolveAdapterOptions, DEFAULT_MODELS } from '../lib/config.js';
 import { ClaudeAdapter } from '../lib/adapter.js';
-import { OAuthManager } from '../lib/oauth.js';
+import { OAuthManager, REF_ACCESS, REF_REFRESH, resolveOAuthToken } from '../lib/oauth.js';
 
 let passed = 0;
 const checks = [];
+/**
+ * Register one check. Checks run sequentially, in registration order: several
+ * of them swap `globalThis.fetch`, and running those concurrently lets one
+ * test's restore tear down another's mock — which sends the request to the
+ * real endpoint instead.
+ */
 function ok(name, fn) {
-  checks.push(
-    (async () => {
-      try {
-        await fn();
-        passed += 1;
-        console.log(`  ok  ${name}`);
-      } catch (error) {
-        console.error(`FAIL ${name}`);
-        console.error(error);
-        process.exitCode = 1;
-      }
-    })(),
-  );
+  checks.push({ name, fn });
 }
 
 /** Image resolver stub: never called unless a message carries an image. */
@@ -342,6 +336,95 @@ ok('pre-4.6 models still accept temperature with thinking off', async () => {
   assert.equal(body.temperature, 0.7);
 });
 
+ok('thinking blocks survive a stream → history → request round-trip', async () => {
+  const events = (async function* () {
+    yield { event: 'message_start', data: JSON.stringify({ type: 'message_start', message: { usage: {} } }) };
+    yield { event: 'content_block_start', data: JSON.stringify({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } }) };
+    yield { event: 'content_block_delta', data: JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'weigh it' } }) };
+    yield { event: 'content_block_delta', data: JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'sig-abc' } }) };
+    yield { event: 'content_block_stop', data: JSON.stringify({ type: 'content_block_stop', index: 0 }) };
+    yield { event: 'content_block_start', data: JSON.stringify({ type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 'toolu_1', name: 'list_files', input: {} } }) };
+    yield { event: 'content_block_stop', data: JSON.stringify({ type: 'content_block_stop', index: 1 }) };
+    yield { event: 'message_delta', data: JSON.stringify({ type: 'message_delta', delta: { stop_reason: 'tool_use' } }) };
+    yield { event: 'message_stop', data: JSON.stringify({ type: 'message_stop' }) };
+  })();
+  const content = [];
+  for await (const chunk of translateAnthropic(events)) {
+    if (chunk.type === 'block-end') content.push(chunk.block);
+  }
+  // The signature rode the stream out...
+  assert.deepEqual(content[0], { type: 'reasoning', text: 'weigh it', signature: 'sig-abc' });
+  // ...a parameterless tool call still yields parseable arguments...
+  assert.equal(content[1].arguments, '{}');
+  assert.deepEqual(JSON.parse(content[1].arguments), {});
+
+  // ...and the next turn replays the thinking block ahead of the tool call.
+  const { messages: wire } = await serializeMessages(
+    [
+      { role: 'user', content: [{ type: 'text', text: 'go' }] },
+      { role: 'assistant', content },
+      { role: 'user', content: [{ type: 'tool-result', toolCallId: 'toolu_1', content: [{ type: 'text', text: 'ok' }] }] },
+    ],
+    noImages,
+  );
+  assert.deepEqual(wire[1].content[0], { type: 'thinking', thinking: 'weigh it', signature: 'sig-abc' });
+  assert.equal(wire[1].content[1].type, 'tool_use');
+});
+
+ok('reasoning that lost its signature is dropped, not sent unsigned', async () => {
+  const { messages: wire } = await serializeMessages(
+    [
+      { role: 'user', content: [{ type: 'text', text: 'go' }] },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'reasoning', text: 'stored before signatures were kept' },
+          { type: 'tool-call', id: 'toolu_2', name: 'read', arguments: '{"p":"a"}' },
+        ],
+      },
+    ],
+    noImages,
+  );
+  assert.ok(!wire[1].content.some((block) => block.type === 'thinking'));
+  assert.equal(wire[1].content[0].type, 'tool_use');
+});
+
+ok('redacted thinking round-trips as an opaque block', async () => {
+  const events = (async function* () {
+    yield { event: 'content_block_start', data: JSON.stringify({ type: 'content_block_start', index: 0, content_block: { type: 'redacted_thinking', data: 'enc-xyz' } }) };
+    yield { event: 'content_block_stop', data: JSON.stringify({ type: 'content_block_stop', index: 0 }) };
+    yield { event: 'message_stop', data: JSON.stringify({ type: 'message_stop' }) };
+  })();
+  const content = [];
+  for await (const chunk of translateAnthropic(events)) {
+    if (chunk.type === 'block-end') content.push(chunk.block);
+  }
+  assert.deepEqual(content[0], { type: 'reasoning', text: '', redactedData: 'enc-xyz' });
+  const { messages: wire } = await serializeMessages(
+    [{ role: 'user', content: [{ type: 'text', text: 'x' }] }, { role: 'assistant', content }],
+    noImages,
+  );
+  assert.deepEqual(wire[1].content[0], { type: 'redacted_thinking', data: 'enc-xyz' });
+});
+
+ok('block indices follow the wire, not arrival order', async () => {
+  // An unsupported block type between two supported ones must not shift the
+  // indices that later deltas address.
+  const events = (async function* () {
+    yield { event: 'content_block_start', data: JSON.stringify({ type: 'content_block_start', index: 0, content_block: { type: 'server_tool_use', id: 'srv_1', name: 'web_search' } }) };
+    yield { event: 'content_block_stop', data: JSON.stringify({ type: 'content_block_stop', index: 0 }) };
+    yield { event: 'content_block_start', data: JSON.stringify({ type: 'content_block_start', index: 1, content_block: { type: 'text', text: '' } }) };
+    yield { event: 'content_block_delta', data: JSON.stringify({ type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'hello' } }) };
+    yield { event: 'content_block_stop', data: JSON.stringify({ type: 'content_block_stop', index: 1 }) };
+    yield { event: 'message_stop', data: JSON.stringify({ type: 'message_stop' }) };
+  })();
+  const content = [];
+  for await (const chunk of translateAnthropic(events)) {
+    if (chunk.type === 'block-end') content.push(chunk.block);
+  }
+  assert.deepEqual(content, [{ type: 'text', text: 'hello' }]);
+});
+
 ok('default catalog ships no retired models', () => {
   const retired = new Set([
     'claude-opus-4-1',
@@ -355,6 +438,61 @@ ok('default catalog ships no retired models', () => {
 });
 
 // ── 5. OAuth helpers (no network) ──────────────────────────────────────────
+ok('findPending rejects a mismatched state but tolerates an absent one', async () => {
+  const manager = new OAuthManager();
+  await manager.beginLogin('flow-1');
+  const [pending] = manager.pendingByState.values();
+  assert.equal(manager.findPending(pending.state), pending, 'exact match must resolve');
+  assert.equal(manager.findPending(''), pending, 'a stateless hop falls back to the sole login');
+  assert.equal(
+    manager.findPending('deadbeefdeadbeefdeadbeefdeadbeef'),
+    undefined,
+    'a code minted for another authorization request must not be accepted',
+  );
+  manager.dispose();
+});
+
+ok('concurrent expiries share one refresh', async () => {
+  let refreshCalls = 0;
+  const store = new Map([
+    [String(REF_ACCESS), JSON.stringify({ accessToken: 'stale', expiresAt: 0 })],
+    [String(REF_REFRESH), 'refresh-token-1'],
+  ]);
+  const credentials = {
+    resolve: async (ref) => {
+      const value = store.get(String(ref));
+      return value === undefined ? undefined : { value };
+    },
+    set: async (ref, value) => void store.set(String(ref), value),
+    unset: async (ref) => void store.delete(String(ref)),
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    refreshCalls += 1;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ access_token: 'fresh', expires_in: 1800, refresh_token: 'refresh-token-2' }),
+    };
+  };
+  try {
+    const results = await Promise.all([
+      resolveOAuthToken(credentials),
+      resolveOAuthToken(credentials),
+      resolveOAuthToken(credentials),
+    ]);
+    assert.equal(refreshCalls, 1, `rotating refresh token was spent ${refreshCalls} times`);
+    for (const result of results) assert.equal(result.accessToken, 'fresh');
+    // A later call refreshes again rather than reusing the settled promise.
+    store.set(String(REF_ACCESS), JSON.stringify({ accessToken: 'stale', expiresAt: 0 }));
+    await resolveOAuthToken(credentials);
+    assert.equal(refreshCalls, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 ok('OAuthManager beginLogin builds a valid authorize URL', async () => {
   const manager = new OAuthManager();
   const urlText = await manager.beginLogin('flow-1');
@@ -373,5 +511,15 @@ ok('OAuthManager beginLogin builds a valid authorize URL', async () => {
   manager.dispose();
 });
 
-await Promise.all(checks);
-console.log(`\n${passed} checks passed`);
+for (const { name, fn } of checks) {
+  try {
+    await fn();
+    passed += 1;
+    console.log(`  ok  ${name}`);
+  } catch (error) {
+    console.error(`FAIL ${name}`);
+    console.error(error);
+    process.exitCode = 1;
+  }
+}
+console.log(`\n${passed} of ${checks.length} checks passed`);
