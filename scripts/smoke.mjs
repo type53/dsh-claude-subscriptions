@@ -8,7 +8,7 @@ import { serializeRequest, serializeMessages, translateAnthropic, fetchModels } 
 import { parseSse } from '../lib/sse.js';
 import { Config, resolveAdapterOptions, DEFAULT_MODELS } from '../lib/config.js';
 import { ClaudeAdapter } from '../lib/adapter.js';
-import { OAuthManager, REF_ACCESS, REF_REFRESH, resolveOAuthToken } from '../lib/oauth.js';
+import { authHeaders, resolveAnthropicAuth } from '../lib/auth.js';
 
 let passed = 0;
 const checks = [];
@@ -32,9 +32,8 @@ ok('Config normalizes defaults', () => {
   const resolved = Config({});
   assert.equal(resolved.thinking, 'enabled');
   assert.equal(resolved.models.length, DEFAULT_MODELS.length);
-  // schemastery materializes the optional nested objects as empty objects —
-  // callers must gate on their inner fields, not their presence.
-  assert.deepEqual(resolved.flow, {});
+  // schemastery materializes the optional nested object as an empty object —
+  // callers must gate on its inner fields, not on its presence.
   assert.deepEqual(resolved.auth, {});
 });
 
@@ -230,15 +229,13 @@ ok('translateAnthropic errors on truncation', async () => {
 
 // ── 4b. Regressions ────────────────────────────────────────────────────────
 ok('stream() reports the real failure, not a scope crash', async () => {
-  // No OAuth session, no credentials service, no apiKeyEnv → resolveAuth throws
-  // before the watchdog exists, which is exactly the path that used to hit a
-  // `catch` reading a `let` declared inside the `try`.
+  // No credentials service and no environment → resolveAuth throws before the
+  // watchdog exists, which is exactly the path that used to hit a `catch`
+  // reading a `let` declared inside the `try`.
   const adapter = new ClaudeAdapter({
     options: () => resolveAdapterOptions({}),
-    getCredentials: () => undefined,
     getAttachments: () => undefined,
-    launchEnvironment: undefined,
-    resolveOAuthToken: async () => undefined,
+    resolveAuth: () => resolveAnthropicAuth({ credentials: undefined, launchEnvironment: undefined }),
     resolveUserId: () => 'test-user',
   });
   let caught;
@@ -425,6 +422,61 @@ ok('block indices follow the wire, not arrival order', async () => {
   assert.deepEqual(content, [{ type: 'text', text: 'hello' }]);
 });
 
+// ── 5. Credential resolution ───────────────────────────────────────────────
+ok('an API key and an OAuth token take different headers', () => {
+  // Sending either one the other way is a 401. The previous adapter sent both
+  // as `Authorization: Bearer`, so the API-key path could never have worked.
+  assert.deepEqual(authHeaders({ kind: 'api-key', token: 'sk-ant-test' }), {
+    'x-api-key': 'sk-ant-test',
+  });
+  assert.deepEqual(authHeaders({ kind: 'oauth', token: 'oat-test' }), {
+    authorization: 'Bearer oat-test',
+    'anthropic-beta': 'oauth-2025-04-20',
+  });
+});
+
+ok('credential sources resolve in the documented order', async () => {
+  const key = 'sk-ant-api03-stored';
+  const credentials = {
+    resolve: async () => ({ value: key }),
+    set: async () => {},
+    unset: async () => {},
+  };
+  const env = new Map([
+    ['ANTHROPIC_API_KEY', { value: 'sk-ant-api03-env', source: 'process' }],
+    ['ANTHROPIC_AUTH_TOKEN', { value: 'oat-env', source: 'process' }],
+  ]);
+  const launchEnvironment = { get: (name) => env.get(name) };
+
+  // A key stored through the settings tab wins over everything else.
+  assert.deepEqual(await resolveAnthropicAuth({ credentials, launchEnvironment }), {
+    kind: 'api-key',
+    token: key,
+    source: 'stored-key',
+  });
+
+  // Then the environment key, then the environment token.
+  const noStore = { resolve: async () => undefined, set: async () => {}, unset: async () => {} };
+  assert.equal((await resolveAnthropicAuth({ credentials: noStore, launchEnvironment })).source, 'env-key');
+  env.delete('ANTHROPIC_API_KEY');
+  const viaToken = await resolveAnthropicAuth({ credentials: noStore, launchEnvironment });
+  assert.deepEqual(viaToken, { kind: 'oauth', token: 'oat-env', source: 'env-token' });
+});
+
+ok('no credential anywhere is a MISSING_CREDENTIAL error, not a crash', async () => {
+  // The CLI probe must swallow every failure — absent binary, not logged in,
+  // hung process — so the caller falls through to a clean error.
+  let caught;
+  try {
+    await resolveAnthropicAuth({ credentials: undefined, launchEnvironment: { get: () => undefined } });
+  } catch (error) {
+    caught = error;
+  }
+  assert.ok(caught !== undefined, 'expected a throw');
+  assert.equal(caught.code, 'MISSING_CREDENTIAL');
+  assert.match(caught.message, /ant auth login/);
+});
+
 ok('default catalog ships no retired models', () => {
   const retired = new Set([
     'claude-opus-4-1',
@@ -435,80 +487,6 @@ ok('default catalog ships no retired models', () => {
   for (const model of DEFAULT_MODELS) {
     assert.ok(!retired.has(model.id), `${model.id} is retired and 404s`);
   }
-});
-
-// ── 5. OAuth helpers (no network) ──────────────────────────────────────────
-ok('findPending rejects a mismatched state but tolerates an absent one', async () => {
-  const manager = new OAuthManager();
-  await manager.beginLogin('flow-1');
-  const [pending] = manager.pendingByState.values();
-  assert.equal(manager.findPending(pending.state), pending, 'exact match must resolve');
-  assert.equal(manager.findPending(''), pending, 'a stateless hop falls back to the sole login');
-  assert.equal(
-    manager.findPending('deadbeefdeadbeefdeadbeefdeadbeef'),
-    undefined,
-    'a code minted for another authorization request must not be accepted',
-  );
-  manager.dispose();
-});
-
-ok('concurrent expiries share one refresh', async () => {
-  let refreshCalls = 0;
-  const store = new Map([
-    [String(REF_ACCESS), JSON.stringify({ accessToken: 'stale', expiresAt: 0 })],
-    [String(REF_REFRESH), 'refresh-token-1'],
-  ]);
-  const credentials = {
-    resolve: async (ref) => {
-      const value = store.get(String(ref));
-      return value === undefined ? undefined : { value };
-    },
-    set: async (ref, value) => void store.set(String(ref), value),
-    unset: async (ref) => void store.delete(String(ref)),
-  };
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => {
-    refreshCalls += 1;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    return {
-      ok: true,
-      status: 200,
-      json: async () => ({ access_token: 'fresh', expires_in: 1800, refresh_token: 'refresh-token-2' }),
-    };
-  };
-  try {
-    const results = await Promise.all([
-      resolveOAuthToken(credentials),
-      resolveOAuthToken(credentials),
-      resolveOAuthToken(credentials),
-    ]);
-    assert.equal(refreshCalls, 1, `rotating refresh token was spent ${refreshCalls} times`);
-    for (const result of results) assert.equal(result.accessToken, 'fresh');
-    // A later call refreshes again rather than reusing the settled promise.
-    store.set(String(REF_ACCESS), JSON.stringify({ accessToken: 'stale', expiresAt: 0 }));
-    await resolveOAuthToken(credentials);
-    assert.equal(refreshCalls, 2);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-ok('OAuthManager beginLogin builds a valid authorize URL', async () => {
-  const manager = new OAuthManager();
-  const urlText = await manager.beginLogin('flow-1');
-  const url = new URL(urlText);
-  assert.equal(url.origin, 'https://claude.com');
-  assert.equal(url.pathname, '/cai/oauth/authorize');
-  assert.equal(url.searchParams.get('client_id'), '9d1c250a-e61b-44d9-88ed-5944d1962f5e');
-  assert.equal(url.searchParams.get('response_type'), 'code');
-  assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
-  assert.equal(url.searchParams.get('scope'), 'user:inference user:profile');
-  const redirectUri = url.searchParams.get('redirect_uri');
-  assert.ok(redirectUri.startsWith('http://localhost:'));
-  assert.ok(redirectUri.endsWith('/callback'));
-  assert.ok(url.searchParams.get('state').length > 0);
-  assert.ok(url.searchParams.get('code_challenge').length > 0);
-  manager.dispose();
 });
 
 for (const { name, fn } of checks) {
