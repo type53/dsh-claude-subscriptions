@@ -71,7 +71,7 @@ dsh --profile web
 4. Start or continue a conversation, open the model picker next to the input box (or type `/model`), and choose a Claude model:
 
 ```
-/model claude-sonnet-4-5
+/model claude-sonnet-5
 ```
 
 The agent now works with that model. To disconnect, go back to the Subscriptions tab and click **Disconnect** (this clears the locally stored tokens).
@@ -88,7 +88,7 @@ Make sure the Subscriptions tab really shows connected; restart dsh web once, th
 The plugin auto-refreshes with the refresh token and falls back to Anthropic's token-exchange when needed; if failures persist, log in again from the Subscriptions tab.
 
 **Which Claude models can I use?**
-Depends on your plan. By default: `claude-opus-4-1`, `claude-sonnet-4-5`, `claude-haiku-4-5`; you can customize the list in configuration (below).
+Depends on your plan. By default: `claude-opus-5`, `claude-sonnet-5`, `claude-haiku-4-5`; you can customize the list in configuration (below).
 
 **Does it support images / vision?**
 Yes. Attach images (PNG / JPEG / WebP / GIF) to a message and the plugin sends them to Claude as base64 image blocks.
@@ -106,9 +106,9 @@ llm-claude:
   maxTokens: 32000
   defaultContextWindow: 200000
   models:
-    - id: claude-sonnet-4-5
-      name: Claude Sonnet 4.5
-      contextWindow: 200000
+    - id: claude-sonnet-5
+      name: Claude Sonnet 5
+      contextWindow: 1000000
       maxTokens: 32000
 ```
 

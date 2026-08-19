@@ -71,7 +71,7 @@ dsh --profile web
 4. 新建或继续一个会话，在输入框旁打开模型选择器（或输入 `/model`），选一个 Claude 模型：
 
 ```
-/model claude-sonnet-4-5
+/model claude-sonnet-5
 ```
 
 之后 agent 就用这个模型工作了。想断开连接，回到「订阅」页点**断开连接**即可（会清掉本机保存的令牌）。
@@ -88,7 +88,7 @@ dsh --profile web
 插件会自动用 refresh token 续期，也会在必要时自动做 Anthropic 的 token-exchange 兜底；如果连续失败，到「订阅」页重新登录一次。
 
 **能用哪些 Claude 模型？**
-取决于你的订阅套餐。默认提供 `claude-opus-4-1`、`claude-sonnet-4-5`、`claude-haiku-4-5`，你也可以在配置里自定义列表（见下）。
+取决于你的订阅套餐。默认提供 `claude-opus-5`、`claude-sonnet-5`、`claude-haiku-4-5`，你也可以在配置里自定义列表（见下）。
 
 **支持图片 / 视觉输入吗？**
 支持。把图片（PNG / JPEG / WebP / GIF）附到消息里，插件会以 base64 图片块发给 Claude。
@@ -106,9 +106,9 @@ llm-claude:
   maxTokens: 32000
   defaultContextWindow: 200000
   models:
-    - id: claude-sonnet-4-5
-      name: Claude Sonnet 4.5
-      contextWindow: 200000
+    - id: claude-sonnet-5
+      name: Claude Sonnet 5
+      contextWindow: 1000000
       maxTokens: 32000
 ```
 
