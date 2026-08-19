@@ -1,110 +1,159 @@
 <div align="center">
 
-# dsh-claude-subscriptions
+# Claude for DeepSeek Harness
 
-**在 DeepSeek Harness web 里直接用你的 Claude 订阅（Pro / Max）**
+**已经在为 Claude Pro / Max 付费了？直接在 DSH 里用起来 —— 不用 API Key，也不用再付一份钱。**
 
-English · [简体中文](README.zh.md)
+[English](README.md) · 简体中文
 
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![platform](https://img.shields.io/badge/platform-dsh%20web-blue)](https://github.com/deepseek-ai/deepseek-harness)
 [![provider](https://img.shields.io/badge/provider-Anthropic-orange)](https://www.anthropic.com)
 
-OAuth 一键连接 claude.ai，无需 API Key；连接后对话中即可选用 Claude 的 Opus / Sonnet / Haiku 等模型。
-
 </div>
 
 ---
 
-## 它能做什么
+## 这是什么
 
-如果你**已经有 Claude Pro / Max 订阅**，并且平时用 **DeepSeek Harness web** 干活，这个插件能让你在同一个界面里按需切换模型：
+DeepSeek Harness 允许你自由选择用哪个模型来回答问题。这个插件把 **Claude** 也加进这个列表，用的就是你手上那个 Claude 账号。
 
-- **设置 → 订阅**：点一下按钮，浏览器里完成 claude.ai 授权登录，全程不需要 API Key；
-- 连接后，会话输入框旁的**模型选择器**（或 `/model`）里会出现 Claude 模型，选中即可让 agent 用 Claude 执行任务（代码、写作、分析都可以）；
-- **模型列表会自动从 Anthropic 拉取**（连接后自动更新，也能在「订阅」页手动刷新），无需手动配置模型；
-- **支持图片输入**：贴一张截图或图片，Claude 能直接读取；
-- 登录状态、账号信息、断开连接都在「订阅」页里一目了然；
-- 没有订阅？也支持直接填 **Anthropic API Key** 作为备用。
+点一个按钮，像平时那样在 claude.ai 登录一下，Claude 就会出现在模型选择器里，和其他模型并排。不用申请 API Key，不用绑卡，也没有按条计费的表在跑 —— 它走的是你本来就在付的那份订阅。
 
-> 它只是给 dsh web **新增一个可选的模型提供方**，不影响你现有的 DeepSeek 使用，随时可以在模型选择器里切回。
+切换是按会话来的：让 Claude 看一遍 diff，下一个问题再切回 DeepSeek，随时都行。
+
+## 你适合用吗
+
+**很适合，如果你：**
+
+- 有 **Claude Pro 或 Max** 订阅
+- 在用 **DeepSeek Harness web**（`dsh --profile web`）
+- 想拿 Claude 试试某个任务，又不想为此去开通计费
+
+**也能用，如果你：**
+
+- 没有订阅，但有 **Anthropic API Key** —— 插件支持用 Key 作为备用方式（这条路是按用量计费的）
+
+**可以先关掉这页，如果你：**
+
+- 只用 DSH 的终端版 —— 这个插件是给 web 界面用的
+
+## 能得到什么
+
+| | |
+|---|---|
+| 🔑 **不需要 API Key** | 走 claude.ai 登录，和你平时上网页一模一样 |
+| 🔀 **随时切换** | Claude 就在你现有模型旁边，按会话选 |
+| 📋 **模型列表自动更新** | 连接后从 Anthropic 拉取，出了新模型会自己出现 |
+| 🖼️ **可以发图** | 丢一张截图进去，Claude 直接能看 |
+| 🧰 **完整的 agent 能力** | 工具调用、改文件、Claude 的分步思考都正常工作 |
+| 🔒 **数据留在本机** | 登录信息存在你自己电脑上，随时可以断开 |
+
+> 它只是**多加一个模型**。你现有的 DeepSeek 配置一点都不会动，想切回去随时切。
 
 ## 安装
 
-**前置条件**：已安装并运行 DeepSeek Harness web（`dsh --profile web`），本机有 Node.js 20+ 与 pnpm。
+**开始之前**：确认 DSH web 能正常跑起来（`dsh --profile web`），本机装了 Node.js 20 或更高版本，以及 pnpm。
 
-### 方式一：npm 一键安装（推荐）
+### 简单的方式
 
-插件发布到 npm 后，一条命令即可：
+等插件发布到 npm 之后，一条命令就够了：
 
 ```bash
 dsh plugin --profile web add dsh-claude-subscriptions
 ```
 
-### 方式二：手动链接（npm 尚未发布时）
+### 从源码安装（目前用这个）
+
+还没发到 npm，所以先手动链接。三步：
 
 ```powershell
-# 1) 克隆到本地任意目录
+# 1) 把代码拉到任意目录
 git clone https://github.com/type53/dsh-claude-subscriptions.git
 cd dsh-claude-subscriptions
 pnpm install
+```
 
-# 2) 把插件挂进 web profile
-#    打开 $env:USERPROFILE\.dsh\profiles\web\package.json，做两处修改：
-#    a) 在 dsh.profile.bundles 数组里追加 "dsh-claude-subscriptions"
-#    b) 在 dependencies 里追加 "dsh-claude-subscriptions": "link:<第 1 步的绝对路径>"
-#    然后安装：
+**2)** 用编辑器打开 `%USERPROFILE%\.dsh\profiles\web\package.json`，加两处内容：
+
+- 在 `dsh.profile.bundles` 列表里加上 `"dsh-claude-subscriptions"`
+- 在 `dependencies` 里加上 `"dsh-claude-subscriptions": "link:<第 1 步的目录绝对路径>"`
+
+然后装一下，让 DSH 认到它：
+
+```powershell
 cd $env:USERPROFILE\.dsh\profiles\web
 pnpm install
+```
 
-# 3) 重启 dsh web
+**3)** 重启 DSH web：
+
+```powershell
 dsh --profile web
 ```
 
-> 如果你的 `DSH_HOME` 不是默认的 `%USERPROFILE%\.dsh`，把上面第 2 步的路径换成你自己的 `$DSH_HOME\profiles\web` 即可。
+> 改过 `DSH_HOME`？把上面的路径换成你自己的 `$DSH_HOME\profiles\web` 就行。
 
-## 快速开始
+## 连接你的账号
 
-1. 打开 dsh web，进入 **设置 → 订阅**；
-2. 点击 **连接 Claude 订阅**，浏览器会打开 claude.ai 的授权页，登录并同意；
-3. 回到 dsh web，「订阅」页会显示**已通过 OAuth 连接**和你的账号；
-4. 新建或继续一个会话，在输入框旁打开模型选择器（或输入 `/model`），选一个 Claude 模型：
+一次性的事，大概一分钟。
+
+1. 在 DSH web 里打开 **设置 → 订阅**
+2. 点 **连接 Claude 订阅**
+3. 会弹出一个 claude.ai 的标签页 —— 登录并同意授权。如果 Claude 给你发了邮箱验证码，在那个页面填进去
+4. 回到 DSH，「订阅」页会显示**已通过 OAuth 连接**，还有你的账号
+
+就这样。除非你主动断开，否则不用再来一次。
+
+> **没弹出标签页？** 是被浏览器拦了。「订阅」页上会出现一个链接，点它就行，后面的步骤完全一样。
+
+## 开始用
+
+在输入框旁边打开模型选择器，或者直接输入 `/model`，选一个 Claude 模型：
 
 ```
 /model claude-sonnet-5
 ```
 
-之后 agent 就用这个模型工作了。想断开连接，回到「订阅」页点**断开连接**即可（会清掉本机保存的令牌）。
+之后这个会话就跑在 Claude 上了。具体能看到哪些模型取决于你的套餐，默认是 **Opus 5**、**Sonnet 5** 和 **Haiku 4.5**，完整列表在连接后会自己刷新。
 
-## 常见问题
+不想用了就回到 **设置 → 订阅** 点**断开连接**，本机保存的登录信息会被清掉。
 
-**点击连接后一直显示「正在等待授权…」？**
-浏览器弹窗可能被拦截了，检查一下浏览器是否允许弹窗；如果 5 分钟内没完成，页面会自动取消，重新点一次即可。
+## 遇到问题
 
-**「订阅」页显示已连接，但模型选择器里没有 Claude？**
-先确认「订阅」页确实显示已连接；然后重启一次 dsh web，再在 `/model` 里搜索 `claude`。
+**一直卡在「正在等待授权…」**
 
-**使用时报 401 / 令牌过期？**
-插件会自动用 refresh token 续期，也会在必要时自动做 Anthropic 的 token-exchange 兜底；如果连续失败，到「订阅」页重新登录一次。
+claude.ai 的登录有好几步 —— 先填邮箱，有时还要输验证码。DSH 会一直等到你全部走完，所以停在这条提示上一两分钟是正常的。在 Claude 那个标签页里把步骤走完，这边会自己变成已连接。超过 10 分钟没完成的话它会放弃，重新点一次「连接」即可。
 
-**能用哪些 Claude 模型？**
-取决于你的订阅套餐。默认提供 `claude-opus-5`、`claude-sonnet-5`、`claude-haiku-4-5`，你也可以在配置里自定义列表（见下）。
+**点了连接，但没有弹出标签页**
 
-**支持图片 / 视觉输入吗？**
-支持。把图片（PNG / JPEG / WebP / GIF）附到消息里，插件会以 base64 图片块发给 Claude。
+浏览器把弹窗拦了。这种情况下「订阅」页会显示一个链接，点它就能打开同一个页面。给 DSH 允许弹窗，下次就不会了。
+
+**显示已连接，但模型选择器里找不到 Claude**
+
+重启一次 DSH web，然后输入 `/model` 搜 `claude`。选择器是在启动时读取列表的。
+
+**用着用着报 401，或者提示登录过期**
+
+插件会在后台自动续期。如果一直失败，最省事的办法是到「订阅」页点断开连接，再重新连一次。
 
 **会影响我原来的 DeepSeek 模型吗？**
-完全不会。它只是新增一个模型提供方，两者可以随时切换。
 
-## 进阶：自定义模型列表（可选）
+不会。它只是往选择器里多加一个选项，其他什么都不动。
 
-模型列表会在连接后自动拉取（也可在「订阅」页点「刷新模型列表」）。如果你想手动覆盖，可以在 `$DSH_HOME\settings.yaml` 里加一段 `llm-claude` 配置：
+**我的登录信息存在哪？**
+
+在你自己电脑的 `$DSH_HOME/.credentials.yaml` 里，不会传到别处。点断开连接就会删掉。
+
+## 可选配置
+
+这些都不是必须的 —— 默认值就够用，模型列表也会自己保持最新。但如果你想固定一份列表，或者调整 Claude 的思考强度，可以在 `$DSH_HOME\settings.yaml` 里加一段 `llm-claude`：
 
 ```yaml
 llm-claude:
-  reasoningEffort: high          # off | high | max，思考强度
-  maxTokens: 32000
-  defaultContextWindow: 200000
+  reasoningEffort: high          # off | high | max —— 回答前思考多久
+  maxTokens: 32000               # 单次回复的最大长度（token）
+  defaultContextWindow: 200000   # 下面没列到的模型用这个上下文大小兜底
   models:
     - id: claude-sonnet-5
       name: Claude Sonnet 5
@@ -112,22 +161,24 @@ llm-claude:
       maxTokens: 32000
 ```
 
-> 模型列表只是建议目录：Anthropic 端点接受任何它认识的模型 id，列表里没有的模型也能直接用。
+> 这份列表只是建议，不是限制 —— 只要是 Anthropic 认识的模型 id 都能用，哪怕没写在这里。
 
-## 工作原理（给好奇的人）
+## 工作原理
 
-- 登录：与 Claude Code 相同的 **OAuth PKCE** 流程——插件在本地起一个回环回调端口，你在 claude.ai 授权后令牌存进 `$DSH_HOME/.credentials.yaml`；
-- 调用：插件向 Anthropic Messages API 发起流式请求，支持工具调用、extended thinking（思考内容会显示为 reasoning 块）与图片输入；
-- 接入：插件把 `claude-subscription` 注册为 dsh web 的一个 LLM provider，所以模型选择器、`/model` 都能直接识别它。
+给好奇的人：
+
+- **登录**用的是 OAuth PKCE，和 Claude Code CLI 是同一套流程。插件会在本地临时监听一个端口，接住 claude.ai 授权后的跳转，然后把令牌存进 `$DSH_HOME/.credentials.yaml`。
+- **对话**以流式方式发往 Anthropic Messages API，支持工具调用、extended thinking 和图片。
+- **在 DSH 内部**，插件注册了一个叫 `claude-subscription` 的模型提供方，所以模型选择器和 `/model` 不用额外配置就能找到它。
 
 ## 开发
 
 ```bash
 pnpm install
-node scripts/smoke.mjs                # 线协议 / 配置单测
-node scripts/oauth-roundtrip-test.mjs # OAuth 回调链路测试（网络已 mock）
-node scripts/host-boot-test.mjs       # 宿主插件接线测试
-node scripts/client-boot-test.mjs     # 浏览器 bundle 引导测试
+node scripts/smoke.mjs                # 请求构造、流式解析、配置
+node scripts/oauth-roundtrip-test.mjs # 登录回调链路（网络已 mock）
+node scripts/host-boot-test.mjs       # DSH 侧插件接线
+node scripts/client-boot-test.mjs     # 设置页 bundle
 ```
 
 ## 许可证

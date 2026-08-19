@@ -1,8 +1,8 @@
 <div align="center">
 
-# dsh-claude-subscriptions
+# Claude for DeepSeek Harness
 
-**Use your Claude subscription (Pro / Max) directly in DeepSeek Harness web**
+**Already paying for Claude Pro or Max? Use it inside DSH — no API key, no second bill.**
 
 [简体中文](README.zh.md) · English
 
@@ -10,101 +10,150 @@
 [![platform](https://img.shields.io/badge/platform-dsh%20web-blue)](https://github.com/deepseek-ai/deepseek-harness)
 [![provider](https://img.shields.io/badge/provider-Anthropic-orange)](https://www.anthropic.com)
 
-One-click OAuth connection to claude.ai — no API key required. Once connected, pick Claude's Opus / Sonnet / Haiku models right in your conversations.
-
 </div>
 
 ---
 
-## What it does
+## What this is
 
-If you already have a **Claude Pro / Max subscription** and use **DeepSeek Harness web** day-to-day, this plugin lets you switch models in the same interface:
+DeepSeek Harness lets you choose which AI model answers you. This plugin adds **Claude** to that list, signed in with the Claude account you already have.
 
-- **Settings → Subscriptions**: one click, authorize with your claude.ai account in the browser — no API key involved;
-- Once connected, Claude models show up in the **model picker** next to the input box (or `/model`) — select one and the agent works with Claude, whether it's code, writing, or analysis;
-- The **model list is fetched from Anthropic automatically** after you connect, and can be refreshed from the Subscriptions tab — no manual model configuration;
-- **Image input** is supported: attach a screenshot or image and Claude reads it;
-- Connection status, account info, and disconnect all live in the Subscriptions tab;
-- No subscription? A plain **Anthropic API key** is supported as a fallback.
+You click one button, log in at claude.ai the way you always do, and Claude appears in your model picker alongside everything else. There's no API key to create, no card to enter, and no per-message meter running — it uses the subscription you're already paying for.
 
-> It only adds an **optional model provider** to dsh web — your existing DeepSeek setup is untouched, and you can switch back anytime from the model picker.
+Switching models is per-conversation. Ask Claude to review a diff, then switch straight back to DeepSeek for the next question.
 
-## Installation
+## Is this for you?
 
-**Prerequisites**: DeepSeek Harness web installed and running (`dsh --profile web`), Node.js 20+ and pnpm on your machine.
+**A good fit if you…**
 
-### Option A: install via npm (recommended)
+- have a **Claude Pro or Max** subscription
+- run **DeepSeek Harness web** (`dsh --profile web`)
+- want to try Claude on a task without setting up billing anywhere
 
-Once the plugin is published to npm, one command:
+**Also works if you…**
+
+- have no subscription but do have an **Anthropic API key** — the plugin accepts one as a fallback (that route bills per use)
+
+**You can stop reading if you…**
+
+- only use the DSH terminal app — this plugin is for the web interface
+
+## What you get
+
+| | |
+|---|---|
+| 🔑 **No API key** | Log in through claude.ai, the same as on the website |
+| 🔀 **Switch anytime** | Claude sits next to your existing models; pick per conversation |
+| 📋 **Models stay current** | The list is fetched from Anthropic after you connect, so new releases show up on their own |
+| 🖼️ **Send images** | Drop in a screenshot and Claude reads it |
+| 🧰 **Full agent support** | Tools, file edits, and Claude's step-by-step thinking all work |
+| 🔒 **Stays on your machine** | Your login is stored locally, and you can disconnect at any time |
+
+> This only **adds** a model. Nothing about your existing DeepSeek setup changes, and you can switch back whenever you like.
+
+## Install
+
+**Before you start**, make sure DSH web runs (`dsh --profile web`) and that you have Node.js 20 or newer plus pnpm.
+
+### The easy way
+
+Once the plugin is on npm, this is the whole install:
 
 ```bash
 dsh plugin --profile web add dsh-claude-subscriptions
 ```
 
-### Option B: link from source (until it's on npm)
+### From source (what to use today)
+
+Not on npm yet, so link it manually. Three steps:
 
 ```powershell
-# 1) Clone to any local directory
+# 1) Grab the code — any folder you like
 git clone https://github.com/type53/dsh-claude-subscriptions.git
 cd dsh-claude-subscriptions
 pnpm install
+```
 
-# 2) Mount the plugin into the web profile
-#    Open $env:USERPROFILE\.dsh\profiles\web\package.json and make two edits:
-#    a) append "dsh-claude-subscriptions" to the dsh.profile.bundles array
-#    b) add "dsh-claude-subscriptions": "link:<absolute path from step 1>" to dependencies
-#    Then install:
+**2)** Open `%USERPROFILE%\.dsh\profiles\web\package.json` in an editor and make two small additions:
+
+- add `"dsh-claude-subscriptions"` to the `dsh.profile.bundles` list
+- add `"dsh-claude-subscriptions": "link:<the folder from step 1>"` to `dependencies`
+
+Then install so DSH picks it up:
+
+```powershell
 cd $env:USERPROFILE\.dsh\profiles\web
 pnpm install
+```
 
-# 3) Restart dsh web
+**3)** Restart DSH web:
+
+```powershell
 dsh --profile web
 ```
 
-> If your `DSH_HOME` is not the default `%USERPROFILE%\.dsh`, replace the path in step 2 with your own `$DSH_HOME\profiles\web`.
+> Changed your `DSH_HOME`? Use `$DSH_HOME\profiles\web` instead of the path above.
 
-## Quick start
+## Connect your account
 
-1. Open dsh web, go to **Settings → Subscriptions**;
-2. Click **Connect Claude subscription** — the browser opens the claude.ai authorization page; sign in and approve;
-3. Back in dsh web, the tab shows **Connected via OAuth** along with your account;
-4. Start or continue a conversation, open the model picker next to the input box (or type `/model`), and choose a Claude model:
+This takes about a minute, once.
+
+1. In DSH web, open **Settings → Subscriptions**
+2. Click **Connect Claude subscription**
+3. A tab opens at claude.ai — sign in and approve. If Claude emails you a verification code, enter it there
+4. Come back to DSH. The tab now reads **Connected via OAuth** and shows your account
+
+That's it. You won't need to do this again unless you disconnect.
+
+> **No tab opened?** Your browser blocked it. A link appears on the Subscriptions tab — click that instead, and the rest is identical.
+
+## Using Claude
+
+Open the model picker next to the message box, or type `/model`, and choose a Claude model:
 
 ```
 /model claude-sonnet-5
 ```
 
-The agent now works with that model. To disconnect, go back to the Subscriptions tab and click **Disconnect** (this clears the locally stored tokens).
+From then on that conversation runs on Claude. Which models you see depends on your plan; the defaults are **Opus 5**, **Sonnet 5**, and **Haiku 4.5**, and the full list refreshes itself after you connect.
 
-## FAQ
+To stop using it, go back to **Settings → Subscriptions** and click **Disconnect**. That erases the stored login from your machine.
 
-**I clicked Connect but it keeps saying "Waiting for authorization…"**
-Your browser probably blocked the pop-up — check whether pop-ups are allowed. If the login isn't finished within 5 minutes, the flow cancels itself; just click again.
+## Troubleshooting
 
-**The tab says connected, but no Claude models in the picker?**
-Make sure the Subscriptions tab really shows connected; restart dsh web once, then search `claude` in `/model`.
+**It's stuck on "Waiting for authorization…"**
 
-**401 / token expired while using it?**
-The plugin auto-refreshes with the refresh token and falls back to Anthropic's token-exchange when needed; if failures persist, log in again from the Subscriptions tab.
+The claude.ai login has a few steps — email, then sometimes a verification code. DSH waits until you've finished all of them, so this message is normal for a minute or two. Finish the steps in the Claude tab and this page switches to connected by itself. After 10 minutes it gives up and you can just click Connect again.
 
-**Which Claude models can I use?**
-Depends on your plan. By default: `claude-opus-5`, `claude-sonnet-5`, `claude-haiku-4-5`; you can customize the list in configuration (below).
+**No tab opened when I clicked Connect**
 
-**Does it support images / vision?**
-Yes. Attach images (PNG / JPEG / WebP / GIF) to a message and the plugin sends them to Claude as base64 image blocks.
+Your browser blocked the pop-up. The Subscriptions tab shows a link when that happens — click it to open the same page manually. Allowing pop-ups for DSH avoids it next time.
 
-**Will this affect my existing DeepSeek models?**
-Not at all. It only adds a provider; switch between them freely.
+**It says connected, but I don't see Claude in the model picker**
 
-## Advanced: custom model list (optional)
+Restart DSH web once, then type `/model` and search for `claude`. The picker reads its list at startup.
 
-The model list refreshes automatically after you connect (and via the **Refresh model list** button in the Subscriptions tab). If you want to override it by hand, add an `llm-claude` section to `$DSH_HOME\settings.yaml`:
+**I got a 401, or it says my login expired**
+
+The plugin renews your login on its own in the background. If it keeps failing, the simplest fix is Disconnect and then Connect again from the Subscriptions tab.
+
+**Will this mess up my DeepSeek models?**
+
+No. It adds one more option to the picker and leaves everything else alone.
+
+**Where is my login stored?**
+
+In `$DSH_HOME/.credentials.yaml` on your own machine — nowhere else. Disconnect deletes it.
+
+## Optional settings
+
+You don't need any of this — the defaults are fine, and the model list keeps itself up to date. But if you want to pin an exact list or change how hard Claude thinks, add an `llm-claude` section to `$DSH_HOME\settings.yaml`:
 
 ```yaml
 llm-claude:
-  reasoningEffort: high          # off | high | max, thinking intensity
-  maxTokens: 32000
-  defaultContextWindow: 200000
+  reasoningEffort: high          # off | high | max — how long Claude thinks before answering
+  maxTokens: 32000               # longest reply, in tokens
+  defaultContextWindow: 200000   # fallback size for models not listed below
   models:
     - id: claude-sonnet-5
       name: Claude Sonnet 5
@@ -112,22 +161,24 @@ llm-claude:
       maxTokens: 32000
 ```
 
-> The model list is advisory: the Anthropic endpoint accepts any model id it knows, so unlisted models work too.
+> The list is a suggestion, not a limit — any model id Anthropic recognizes works, even if it isn't listed here.
 
-## How it works (for the curious)
+## How it works
 
-- **Login**: the same **OAuth PKCE** flow Claude Code uses — the plugin runs a loopback callback port locally; after you authorize at claude.ai, tokens are stored in `$DSH_HOME/.credentials.yaml`;
-- **Calls**: the plugin streams requests to the Anthropic Messages API, with full tool-call, extended-thinking, and image support (thinking shows up as reasoning blocks);
-- **Integration**: the plugin registers `claude-subscription` as an LLM provider for dsh web, so the model picker and `/model` recognize it directly.
+For the curious:
+
+- **Signing in** uses OAuth with PKCE, the same flow the Claude Code CLI uses. The plugin briefly listens on a local port to catch the redirect back from claude.ai, then stores the tokens in `$DSH_HOME/.credentials.yaml`.
+- **Messages** are streamed to Anthropic's Messages API, with support for tool calls, extended thinking, and images.
+- **Inside DSH**, the plugin registers a model provider called `claude-subscription`, which is why the picker and `/model` find it without extra setup.
 
 ## Development
 
 ```bash
 pnpm install
-node scripts/smoke.mjs                # wire protocol / config unit tests
-node scripts/oauth-roundtrip-test.mjs # OAuth callback flow (network mocked)
-node scripts/host-boot-test.mjs       # host plugin wiring test
-node scripts/client-boot-test.mjs     # browser bundle boot test
+node scripts/smoke.mjs                # request building, streaming, config
+node scripts/oauth-roundtrip-test.mjs # the login callback flow (network mocked)
+node scripts/host-boot-test.mjs       # plugin wiring on the DSH side
+node scripts/client-boot-test.mjs     # settings-page bundle
 ```
 
 ## License
