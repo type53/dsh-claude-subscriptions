@@ -2,7 +2,7 @@
 
 # Claude for DeepSeek Harness
 
-**Use an existing Claude Pro or Max subscription inside DeepSeek Harness web — no API key required.**
+**Use your Claude subscription directly in DeepSeek Harness web — no API key required.**
 
 [简体中文](README.zh.md) · English
 
@@ -16,9 +16,9 @@
 
 ## Overview
 
-DeepSeek Harness lets you choose which model handles a conversation. This plugin adds Claude to that list, authenticated with the Claude account you already have.
+This plugin lets you use your Claude subscription directly, without an API key.
 
-Connecting takes a single click and a standard claude.ai login. Claude then appears in the model picker alongside your existing models. No API key, payment details, or per-message billing is involved — requests run against the subscription you already hold.
+DeepSeek Harness lets you choose which model handles a conversation, and this plugin adds Claude to that list, authenticated with the Claude account you already have. Connecting takes a single click and a standard claude.ai login, after which Claude appears in the model picker alongside your existing models. No API key, payment details, or per-message billing is involved — requests run against the subscription you already hold.
 
 Model selection is per conversation, so you can use Claude for one task and return to DeepSeek for the next.
 
@@ -152,7 +152,7 @@ llm-claude:
       maxTokens: 32000
 ```
 
-The list is advisory rather than restrictive: any model identifier Anthropic recognises will work, including those not listed here.
+The list is advisory rather than restrictive: any model identifier Anthropic recognizes will work, including those not listed here.
 
 ## How it works
 
