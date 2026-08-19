@@ -5,6 +5,7 @@
  * Run: node scripts/client-boot-test.mjs
  */
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
 let loadedDef;
 globalThis.window = {
@@ -25,7 +26,11 @@ const reactStub = {
   useState: (init) => [typeof init === 'function' ? init() : init, () => {}],
   useEffect: () => {},
   useCallback: (fn) => fn,
+  useRef: (init) => ({ current: init }),
 };
+
+/** Locale dictionaries the bundle registers, captured for the checks below. */
+const dictionaries = {};
 
 const registrations = [];
 const ctx = {
@@ -35,7 +40,7 @@ const ctx = {
   },
   get: (name) => (name === 'connection' ? { api: {}, isLoopback: true } : undefined),
   locale: {
-    register: () => {},
+    register: (_ns, dicts) => Object.assign(dictionaries, dicts),
     bind: () => (key) => key,
   },
   slots: {
@@ -66,4 +71,20 @@ assert.equal(section.id, 'claude-subscriptions');
 assert.equal(section.label(), 'nav'); // locale stub returns the key itself
 assert.equal(typeof section.inject, 'function');
 
-console.log('client bundle boot test passed');
+// ── locale dictionaries: in sync with each other, and with the render code ──
+assert.deepEqual(Object.keys(dictionaries).sort(), ['en', 'zh'], 'expected zh and en dictionaries');
+const zhKeys = Object.keys(dictionaries.zh).sort();
+assert.deepEqual(zhKeys, Object.keys(dictionaries.en).sort(), 'zh and en dictionaries have drifted apart');
+
+const source = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8');
+const used = new Set([...source.matchAll(/\bt\("([A-Za-z0-9_]+)"\)/g)].map((match) => match[1]));
+
+const undefinedKeys = [...used].filter((key) => !zhKeys.includes(key)).sort();
+assert.deepEqual(undefinedKeys, [], `t() renders a key no dictionary defines: ${undefinedKeys.join(', ')}`);
+
+// The other direction catches copy that promises behaviour the code never
+// performs — a `conflict` string sat here unused while no retry existed.
+const unusedKeys = zhKeys.filter((key) => !used.has(key)).sort();
+assert.deepEqual(unusedKeys, [], `dictionary key is never rendered: ${unusedKeys.join(', ')}`);
+
+console.log(`client bundle boot test passed (${zhKeys.length} locale keys, all used)`);
