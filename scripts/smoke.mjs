@@ -4,6 +4,7 @@
  * Run: node scripts/smoke.mjs
  */
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { serializeRequest, serializeMessages, translateAnthropic, fetchModels } from '../lib/anthropic.js';
 import { parseSse } from '../lib/sse.js';
 import { Config, resolveAdapterOptions, DEFAULT_MODELS } from '../lib/config.js';
@@ -475,6 +476,21 @@ ok('no credential anywhere is a MISSING_CREDENTIAL error, not a crash', async ()
   assert.ok(caught !== undefined, 'expected a throw');
   assert.equal(caught.code, 'MISSING_CREDENTIAL');
   assert.match(caught.message, /ant auth login/);
+});
+
+ok('host-side strings carry no untranslatable locale text', async () => {
+  // The Node half has no locale to render into, so a hardcoded Chinese string
+  // reaches an English UI verbatim — which is how "Save an API key in 设置 →
+  // Claude" ended up on screen. client.js is exempt: it ships zh and en
+  // dictionaries and picks between them.
+  const offenders = [];
+  for (const file of ['adapter.js', 'anthropic.js', 'auth.js', 'config.js', 'index.js', 'sse.js']) {
+    const source = await readFile(new URL(`../lib/${file}`, import.meta.url), 'utf8');
+    source.split('\n').forEach((line, index) => {
+      if (/[一-鿿]/.test(line)) offenders.push(`${file}:${index + 1}  ${line.trim()}`);
+    });
+  }
+  assert.deepEqual(offenders, [], `localize or neutralize:\n${offenders.join('\n')}`);
 });
 
 ok('default catalog ships no retired models', () => {
