@@ -7,8 +7,12 @@
  * Run: node scripts/host-boot-test.mjs
  */
 import assert from 'node:assert/strict';
-import { apply, name, inject, runFlowHandshake } from '../lib/index.js';
+import { apply, name, inject } from '../lib/index.js';
 import { PROVIDER, NS } from '../lib/config.js';
+
+// Point the Claude Code credentials lookup at an empty dir so the status
+// publisher never touches a real ~/.claude/.credentials.json in tests.
+process.env.CLAUDE_CONFIG_DIR = 'C:\\dsh-claude-test-no-such-dir';
 
 assert.equal(name, 'llm-claude');
 assert.deepEqual(inject, ['llm']);
@@ -125,34 +129,6 @@ assert.equal(resolved.provider, PROVIDER);
 assert.equal(resolved.context.contextWindow, 200000);
 assert.ok(Array.isArray(resolved.reasoning.efforts));
 assert.deepEqual(resolved.inputModalities, ['text', 'image']);
-
-// ── flow handshake guard: an empty `flow` (schemastery's {} default) ──────
-// must NOT start a login.
-const beginCalls = [];
-const oauthStub = {
-  beginLogin: async (flowId) => {
-    beginCalls.push(flowId);
-    return 'https://claude.ai/oauth/authorize?...';
-  },
-  awaitLogin: () => undefined,
-  cancelLogin: () => {},
-};
-const handshakeScope = { update: async () => {} };
-await runFlowHandshake(
-  { ctx: { get: () => undefined, settings: settingsStub }, oauth: oauthStub, scope: handshakeScope, autoRefreshModels: async () => undefined },
-  { flow: {} },
-  undefined,
-);
-assert.equal(beginCalls.length, 0, 'an empty flow object must not start a login');
-
-// A real flowId (with no url) DOES start a login.
-const flowId = 'flow-123';
-await runFlowHandshake(
-  { ctx: { get: () => undefined, settings: settingsStub }, oauth: oauthStub, scope: handshakeScope, autoRefreshModels: async () => undefined },
-  { flow: { flowId, startedAt: Date.now() } },
-  undefined,
-);
-assert.deepEqual(beginCalls, [flowId]);
 
 // The inject disposer must restore the entry-only source (no crash).
 assert.equal(injectDisposer, undefined); // the callback registers cleanup via sctx.effect

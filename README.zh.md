@@ -10,7 +10,7 @@ English · [简体中文](README.zh.md)
 [![platform](https://img.shields.io/badge/platform-dsh%20web-blue)](https://github.com/deepseek-ai/deepseek-harness)
 [![provider](https://img.shields.io/badge/provider-Anthropic-orange)](https://www.anthropic.com)
 
-OAuth 一键连接 claude.ai，无需 API Key；连接后对话中即可选用 Claude 的 Opus / Sonnet / Haiku 等模型。
+复用你的 Claude 订阅（Pro / Max）：插件直接读取你本机的 **Claude Code 登录状态**，或使用 **`claude setup-token`** 生成的令牌。连接后对话中即可选用 Claude 的 Opus / Sonnet / Haiku 等模型。
 
 </div>
 
@@ -20,14 +20,16 @@ OAuth 一键连接 claude.ai，无需 API Key；连接后对话中即可选用 C
 
 如果你**已经有 Claude Pro / Max 订阅**，并且平时用 **DeepSeek Harness web** 干活，这个插件能让你在同一个界面里按需切换模型：
 
-- **设置 → 订阅**：点一下按钮，浏览器里完成 claude.ai 授权登录，全程不需要 API Key；
-- 连接后，会话输入框旁的**模型选择器**（或 `/model`）里会出现 Claude 模型，选中即可让 agent 用 Claude 执行任务（代码、写作、分析都可以）；
-- **模型列表会自动从 Anthropic 拉取**（连接后自动更新，也能在「订阅」页手动刷新），无需手动配置模型；
+- **设置 → 订阅**：直接显示你当前的订阅状态（账号、订阅类型、限流档位），读取自 **Claude Code 登录**（`~/.claude/.credentials.json`），无需弹窗登录；
+- 没有 Claude Code 登录？把 **`claude setup-token`** 输出的令牌粘贴到「订阅」页即可（这是官方支持的"在 Claude Code 之外使用订阅"的方式）；
+- 有可用令牌后，会话输入框旁的**模型选择器**（或 `/model`）里会出现 Claude 模型，选中即可让 agent 用 Claude 执行任务；
+- **模型列表会自动从 Anthropic 拉取**（也能在「订阅」页手动刷新）；
 - **支持图片输入**：贴一张截图或图片，Claude 能直接读取；
-- 登录状态、账号信息、断开连接都在「订阅」页里一目了然；
 - 没有订阅？也支持直接填 **Anthropic API Key** 作为备用。
 
 > 它只是给 dsh web **新增一个可选的模型提供方**，不影响你现有的 DeepSeek 使用，随时可以在模型选择器里切回。
+
+> ⚠️ **使用条款提示**：订阅令牌仅供**个人**使用。轻量、人工节奏地使用自己的登录是这类工具的常态；大量或自动化调用存在被 Anthropic 限流甚至封号的风险，请自行斟酌。
 
 ## 安装
 
@@ -65,30 +67,33 @@ dsh --profile web
 
 ## 快速开始
 
-1. 打开 dsh web，进入 **设置 → 订阅**；
-2. 点击 **连接 Claude 订阅**，浏览器会打开 claude.ai 的授权页，登录并同意；
-3. 回到 dsh web，「订阅」页会显示**已通过 OAuth 连接**和你的账号；
+1. 确保本机已登录 Claude Code（`claude login`），或运行 `claude setup-token` 拿到令牌；
+2. 打开 dsh web，进入 **设置 → 订阅** —— 页面会显示**已检测到 Claude Code 登录**（或提供**粘贴 setup-token** 输入框）；
+3. 如果令牌已过期，插件会自动续期（并把新令牌写回，保证 Claude Code 本身不受影响）；
 4. 新建或继续一个会话，在输入框旁打开模型选择器（或输入 `/model`），选一个 Claude 模型：
 
 ```
 /model claude-sonnet-4-5
 ```
 
-之后 agent 就用这个模型工作了。想断开连接，回到「订阅」页点**断开连接**即可（会清掉本机保存的令牌）。
+之后 agent 就用这个模型工作了。想停用粘贴的令牌，点「订阅」页的**清除令牌**即可。
 
 ## 常见问题
 
-**点击连接后一直显示「正在等待授权…」？**
-浏览器弹窗可能被拦截了，检查一下浏览器是否允许弹窗；如果 5 分钟内没完成，页面会自动取消，重新点一次即可。
+**「订阅」页显示「未检测到订阅凭据」？**
+本机没有登录 Claude Code（或缺少 `~/.claude/.credentials.json`）。运行 `claude login` 后点**刷新状态**；或粘贴 `claude setup-token` 的令牌。
 
-**「订阅」页显示已连接，但模型选择器里没有 Claude？**
-先确认「订阅」页确实显示已连接；然后重启一次 dsh web，再在 `/model` 里搜索 `claude`。
+**Claude Code 提示「Re-authenticate to continue」？**
+登录已过期或失效。在终端运行一次 `claude login`，插件的下一次请求会自动读取新登录。
 
 **使用时报 401 / 令牌过期？**
-插件会自动用 refresh token 续期，也会在必要时自动做 Anthropic 的 token-exchange 兜底；如果连续失败，到「订阅」页重新登录一次。
+插件会自动续期 Claude Code 令牌（轮换安全：新令牌会写回凭据文件）。如果续期失败，重新运行 `claude login`。
+
+**「订阅」页有登录信息，但模型选择器里没有 Claude？**
+重启一次 dsh web，再在 `/model` 里搜索 `claude`。
 
 **能用哪些 Claude 模型？**
-取决于你的订阅套餐。默认提供 `claude-opus-4-1`、`claude-sonnet-4-5`、`claude-haiku-4-5`，你也可以在配置里自定义列表（见下）。
+取决于你的订阅套餐。插件会自动从 Anthropic 拉取列表，你也可以在配置里覆盖（见下）。
 
 **支持图片 / 视觉输入吗？**
 支持。把图片（PNG / JPEG / WebP / GIF）附到消息里，插件会以 base64 图片块发给 Claude。
@@ -116,16 +121,16 @@ llm-claude:
 
 ## 工作原理（给好奇的人）
 
-- 登录：与 Claude Code 相同的 **OAuth PKCE** 流程——插件在本地起一个回环回调端口，你在 claude.ai 授权后令牌存进 `$DSH_HOME/.credentials.yaml`；
-- 调用：插件向 Anthropic Messages API 发起流式请求，支持工具调用、extended thinking（思考内容会显示为 reasoning 块）与图片输入；
+- 凭据：插件每次请求都重新读取 Claude Code 登录文件 `~/.claude/.credentials.json`（`claudeAiOauth`），Claude Code 的令牌轮换会被自动感知；粘贴的 `claude setup-token` 令牌（存在 dsh 凭据接缝中）优先级更高；
+- 续期：access token 过期时，插件在 `platform.claude.com/v1/oauth/token` 续期并把新令牌对写回文件（Anthropic 会轮换 refresh token，丢弃新令牌会弄坏登录），另有插件侧缓存兜底；
+- 调用：插件用订阅令牌向 Anthropic Messages API 发起流式请求（`anthropic-beta: oauth-2025-04-20`），支持工具调用、extended thinking（思考内容会显示为 reasoning 块）与图片输入；
 - 接入：插件把 `claude-subscription` 注册为 dsh web 的一个 LLM provider，所以模型选择器、`/model` 都能直接识别它。
 
 ## 开发
 
 ```bash
 pnpm install
-node scripts/smoke.mjs                # 线协议 / 配置单测
-node scripts/oauth-roundtrip-test.mjs # OAuth 回调链路测试（网络已 mock）
+node scripts/smoke.mjs                # 线协议 / 配置 / 令牌来源单测
 node scripts/host-boot-test.mjs       # 宿主插件接线测试
 node scripts/client-boot-test.mjs     # 浏览器 bundle 引导测试
 ```

@@ -4,10 +4,13 @@
  * Run: node scripts/smoke.mjs
  */
 import assert from 'node:assert/strict';
+import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { serializeRequest, serializeMessages, translateAnthropic, fetchModels } from '../lib/anthropic.js';
 import { parseSse } from '../lib/sse.js';
 import { Config, resolveAdapterOptions, DEFAULT_MODELS } from '../lib/config.js';
-import { OAuthManager } from '../lib/oauth.js';
+import { AUTH_REF, LOGIN_REF, resolveSubscriptionToken, claudeCodeStatus } from '../lib/auth.js';
 
 let passed = 0;
 const checks = [];
@@ -233,24 +236,114 @@ ok('translateAnthropic errors on truncation', async () => {
   assert.ok(threw);
 });
 
-// ── 5. OAuth helpers (no network) ──────────────────────────────────────────
-ok('OAuthManager beginLogin builds a valid authorize URL', async () => {
-  const manager = new OAuthManager();
-  const urlText = await manager.beginLogin('flow-1');
-  const url = new URL(urlText);
-  assert.equal(url.origin, 'https://claude.com');
-  assert.equal(url.pathname, '/cai/oauth/authorize');
-  assert.equal(url.searchParams.get('client_id'), '9d1c250a-e61b-44d9-88ed-5944d1962f5e');
-  assert.equal(url.searchParams.get('response_type'), 'code');
-  assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
-  assert.equal(url.searchParams.get('scope'), 'user:inference user:profile');
-  const redirectUri = url.searchParams.get('redirect_uri');
-  assert.ok(redirectUri.startsWith('http://localhost:'));
-  assert.ok(redirectUri.endsWith('/callback'));
-  assert.ok(url.searchParams.get('state').length > 0);
-  assert.ok(url.searchParams.get('code_challenge').length > 0);
-  manager.dispose();
+// ── 5. Subscription token sources (temp file + mocked credentials) ─────────
+const tmpDir = await mkdtemp(join(tmpdir(), 'dsh-claude-smoke-'));
+const filePath = join(tmpDir, '.credentials.json');
+
+function credentialsStub(store) {
+  return {
+    async resolve(ref) {
+      const value = store[String(ref)];
+      return value === undefined ? undefined : { value, source: 'test' };
+    },
+    async set(ref, value) {
+      store[String(ref)] = value;
+    },
+    async unset(ref) {
+      delete store[String(ref)];
+    },
+  };
+}
+
+const loginFixture = {
+  claudeAiOauth: {
+    accessToken: 'file-token-live',
+    refreshToken: 'file-refresh',
+    expiresAt: Date.now() + 3600_000,
+    subscriptionType: 'max',
+    rateLimitTier: 'standard',
+    scopes: ['user:profile', 'user:inference'],
+  },
+};
+
+ok('resolveSubscriptionToken prefers the pasted token', async () => {
+  const f = join(tmpDir, 'a.json');
+  await writeFile(f, JSON.stringify(loginFixture), 'utf8');
+  const store = { [String(AUTH_REF)]: 'pasted-token' };
+  const result = await resolveSubscriptionToken(credentialsStub(store), f);
+  assert.deepEqual(result, { kind: 'subscription', token: 'pasted-token', source: 'pasted' });
+});
+
+ok('resolveSubscriptionToken falls back to the live login file', async () => {
+  const f = join(tmpDir, 'b.json');
+  await writeFile(f, JSON.stringify(loginFixture), 'utf8');
+  const result = await resolveSubscriptionToken(credentialsStub({}), f);
+  assert.equal(result.kind, 'subscription');
+  assert.equal(result.token, 'file-token-live');
+  assert.equal(result.source, 'claude-code');
+});
+
+ok('resolveSubscriptionToken refreshes an expired file token (rotation-safe)', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    assert.equal(String(url), 'https://platform.claude.com/v1/oauth/token');
+    const body = JSON.parse(options.body);
+    assert.equal(body.grant_type, 'refresh_token');
+    assert.equal(body.refresh_token, 'file-refresh');
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        access_token: 'refreshed-token',
+        refresh_token: 'new-refresh-token',
+        expires_in: 3600,
+      }),
+    };
+  };
+  try {
+    const f = join(tmpDir, 'c.json');
+    await writeFile(
+      f,
+      JSON.stringify({
+        claudeAiOauth: {
+          accessToken: 'file-token-expired',
+          refreshToken: 'file-refresh',
+          expiresAt: Date.now() - 60_000,
+        },
+      }),
+      'utf8',
+    );
+    const store = {};
+    const result = await resolveSubscriptionToken(credentialsStub(store), f);
+    assert.equal(result.token, 'refreshed-token');
+    // rotation-safe: the new refresh token is cached in our seam...
+    const envelope = JSON.parse(store[String(LOGIN_REF)]);
+    assert.equal(envelope.accessToken, 'refreshed-token');
+    assert.equal(envelope.refreshToken, 'new-refresh-token');
+    // ...and written back to the Claude Code file.
+    const written = JSON.parse(await readFile(f, 'utf8'));
+    assert.equal(written.claudeAiOauth.accessToken, 'refreshed-token');
+    assert.equal(written.claudeAiOauth.refreshToken, 'new-refresh-token');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+ok('claudeCodeStatus reports the login facts', async () => {
+  const f = join(tmpDir, 'd.json');
+  await writeFile(f, JSON.stringify(loginFixture), 'utf8');
+  const status = await claudeCodeStatus(f);
+  assert.equal(status.source, 'claude-code');
+  assert.equal(status.subscriptionType, 'max');
+  assert.equal(status.rateLimitTier, 'standard');
+  assert.ok(status.account.length > 0 || status.account === '');
+});
+
+ok('claudeCodeStatus is undefined without a login file', async () => {
+  const status = await claudeCodeStatus(join(tmpDir, 'missing.json'));
+  assert.equal(status, undefined);
 });
 
 await Promise.all(checks);
+await rm(tmpDir, { recursive: true, force: true });
 console.log(`\n${passed} checks passed`);
