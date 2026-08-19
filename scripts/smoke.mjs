@@ -106,7 +106,9 @@ ok('serializeRequest builds a full body', async () => {
   assert.equal(body.model, 'claude-sonnet-4-5');
   assert.equal(body.stream, true);
   assert.equal(body.max_tokens, 16000);
-  assert.deepEqual(body.thinking, { type: 'enabled', budget_tokens: 12000 });
+  // modern effort API: adaptive thinking + output_config.effort
+  assert.deepEqual(body.thinking, { type: 'adaptive' });
+  assert.deepEqual(body.output_config, { effort: 'high' });
   assert.equal(body.temperature, undefined);
   assert.deepEqual(body.stop_sequences, ['<|end|>']);
   assert.equal(body.system, 'be concise');
@@ -119,6 +121,34 @@ ok('thinking disabled omits thinking', async () => {
     noImages,
   );
   assert.equal(body.thinking, undefined);
+  assert.equal(body.output_config, undefined);
+});
+
+ok('effort levels serialize through the config', async () => {
+  for (const [effort, expected] of [
+    ['low', 'low'],
+    ['medium', 'medium'],
+    ['high', 'high'],
+    ['xhigh', 'xhigh'],
+    ['max', 'max'],
+  ]) {
+    const opts = resolveAdapterOptions({ reasoningEffort: effort });
+    assert.equal(opts.defaults.reasoningEffort, effort);
+    const body = await serializeRequest(
+      { provider: 'p', model: 'm', messages: [{ role: 'user', content: [{ type: 'text', text: 'x' }] }], reasoningEffort: effort },
+      opts,
+      noImages,
+    );
+    assert.deepEqual(body.output_config, { effort: expected });
+    assert.deepEqual(body.thinking, { type: 'adaptive' });
+  }
+  const off = await serializeRequest(
+    { provider: 'p', model: 'm', messages: [{ role: 'user', content: [{ type: 'text', text: 'x' }] }], reasoningEffort: 'off' },
+    resolveAdapterOptions({}),
+    noImages,
+  );
+  assert.equal(off.thinking, undefined);
+  assert.equal(off.output_config, undefined);
 });
 
 ok('serializeMessages emits an Anthropic image block', async () => {

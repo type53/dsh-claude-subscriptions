@@ -107,12 +107,12 @@ dsh --profile web
 
 ```yaml
 llm-claude:
-  reasoningEffort: high          # off | high | max，思考强度
+  reasoningEffort: high          # off | low | medium | high | xhigh | max，思考强度
   maxTokens: 32000
   defaultContextWindow: 200000
   models:
-    - id: claude-sonnet-4-5
-      name: Claude Sonnet 4.5
+    - id: claude-sonnet-5
+      name: Claude Sonnet 5
       contextWindow: 200000
       maxTokens: 32000
 ```

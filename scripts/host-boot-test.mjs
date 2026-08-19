@@ -128,6 +128,12 @@ const resolved = await adapter.resolveModel(PROVIDER, 'claude-sonnet-4-5');
 assert.equal(resolved.provider, PROVIDER);
 assert.equal(resolved.context.contextWindow, 200000);
 assert.ok(Array.isArray(resolved.reasoning.efforts));
+// Claude's real effort levels (verified from the claude-code binary).
+assert.equal(resolved.reasoning.efforts.length, 6);
+assert.deepEqual(
+  resolved.reasoning.efforts.map((e) => e.id),
+  ['off', 'low', 'medium', 'high', 'xhigh', 'max'],
+);
 assert.deepEqual(resolved.inputModalities, ['text', 'image']);
 
 // The inject disposer must restore the entry-only source (no crash).
