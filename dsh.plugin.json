@@ -1,6 +1,6 @@
 {
   "id": "dsh-external/dsh-claude-subscriptions",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "main": "./lib/index.js",
   "description": "使用 Claude（Anthropic）订阅作为 DeepSeek Harness LLM 提供方 — 设置页「订阅」标签连接 claude.ai 订阅，对话中即可使用 Claude 模型",
   "engines": {
