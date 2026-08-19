@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { serializeRequest, serializeMessages, translateAnthropic, fetchModels } from '../lib/anthropic.js';
 import { parseSse } from '../lib/sse.js';
+import { buildTranscript, mapEvent } from '../lib/cc-console.js';
 import { Config, resolveAdapterOptions, DEFAULT_MODELS } from '../lib/config.js';
 import { AUTH_REF, LOGIN_REF, resolveSubscriptionToken, claudeCodeStatus } from '../lib/auth.js';
 
@@ -186,6 +187,62 @@ ok('fetchModels maps the Anthropic models listing', async () => {
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+// ── 2b. Claude Code console transcript + event mapping ──────────────────────
+ok('buildTranscript renders a role-tagged conversation', () => {
+  const { args, stdin } = buildTranscript({
+    model: 'claude-opus-5',
+    system: 'you are a coding agent',
+    messages: [
+      { role: 'user', content: [{ type: 'text', text: 'hello' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'hi' }, { type: 'reasoning', text: 'hidden' }] },
+      { role: 'user', content: [{ type: 'text', text: 'next' }] },
+    ],
+  });
+  assert.ok(args.includes('-p'));
+  assert.ok(args.includes('--model'));
+  assert.equal(args[args.indexOf('--model') + 1], 'claude-opus-5');
+  assert.ok(args.includes('--dangerously-skip-permissions'));
+  assert.ok(args.includes('--append-system-prompt'));
+  assert.equal(args[args.indexOf('--append-system-prompt') + 1], 'you are a coding agent');
+  assert.ok(stdin.includes('<user>\nhello\n</user>'));
+  assert.ok(stdin.includes('<assistant>\nhi\n</assistant>'));
+  // reasoning is dropped from the transcript
+  assert.ok(!stdin.includes('hidden'));
+  assert.ok(stdin.includes('<user>\nnext\n</user>'));
+});
+
+ok('mapEvent translates claude stream-json events', () => {
+  const textChunks = mapEvent({
+    type: 'assistant',
+    message: { content: [
+      { type: 'text', text: 'Sure' },
+      { type: 'tool_use', id: 'x', name: 'Bash', input: {} },
+    ] },
+  });
+  const kinds = textChunks.map((c) => c.type);
+  assert.deepEqual(kinds, ['block-start', 'text-delta', 'block-end']);
+  assert.equal(textChunks.find((c) => c.type === 'text-delta').text, 'Sure');
+  // tool_use is not surfaced (Claude Code executes its own tools)
+
+  const okChunks = mapEvent({
+    type: 'result',
+    is_error: false,
+    usage: { input_tokens: 5, output_tokens: 3, cache_read_input_tokens: 10 },
+  });
+  assert.deepEqual(okChunks.at(-1), { type: 'finish', reason: { kind: 'stop' } });
+  const usage = okChunks.find((c) => c.type === 'usage');
+  assert.equal(usage.usage.inputTokens, 5);
+  assert.equal(usage.usage.cacheReadTokens, 10);
+
+  const errorChunks = mapEvent({
+    type: 'result',
+    is_error: true,
+    errors: ['No conversation found with session ID: x'],
+  });
+  assert.equal(errorChunks.at(-1).reason.kind, 'error');
+  assert.ok(String(errorChunks.at(-1).reason.failure.message).includes('No conversation'));
 });
 
 // ── 3. SSE parsing ─────────────────────────────────────────────────────────

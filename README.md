@@ -21,6 +21,7 @@ Reuse your Claude subscription (Pro / Max) from DeepSeek Harness web — the plu
 If you already have a **Claude Pro / Max subscription** and use **DeepSeek Harness web** day-to-day, this plugin lets you switch models in the same interface:
 
 - **Settings → Subscriptions** shows your live subscription status (account, plan, rate-limit tier) — read straight from your **Claude Code login** (`~/.claude/.credentials.json`), no popup login;
+- **Two modes**: *token mode* calls the Messages API directly (subscription tokens usually allow haiku only); *console mode* drives the official `claude` CLI, keeping the first-party entitlement so **opus/sonnet work**;
 - No Claude Code login handy? Paste a token from **`claude setup-token`** (an official Anthropic command for using your subscription with SDKs/APIs — subject to the subscription terms and model entitlements) and the plugin uses it;
 - Once a token is available, Claude models show up in the **model picker** next to the input box (or `/model`) — select one and the agent works with Claude, whether it's code, writing, or analysis;
 - The **model list is fetched from Anthropic automatically** and can be refreshed from the Subscriptions tab;
@@ -90,7 +91,10 @@ The stored login expired or was invalidated. Run `claude login` once in a termin
 The plugin auto-refreshes the Claude Code token (rotation-safe: the new token is written back to the credentials file). If refresh fails, re-run `claude login`.
 
 **Opus / Sonnet fail with "Retry delay / Failure reason: Error"?**
-That "Error" is Anthropic's own terse message for `rate_limit_error` — the subscription API gives opus/sonnet very little (often zero) quota. Haiku is typically available. Anthropic policy restricts flagship-model API usage for subscriptions; use haiku through the plugin, or a paid API key for premium models.
+That "Error" is Anthropic's own terse message for `rate_limit_error` — subscription tokens hitting the raw Messages API are only entitled to haiku; opus/sonnet are rejected before any quota is consulted. Switch the Subscriptions tab to **Claude Code console** mode: the plugin then drives the official `claude` CLI, which keeps the first-party entitlement — opus/sonnet work there (verified). Alternatively use a paid API key.
+
+**Claude Code console mode is slower?**
+Each model call spawns a `claude` process (~1-3 s overhead before the first token) and Claude Code executes its own tools (its sandbox, not the harness's). The ~15k-token system/tool scaffolding is cache-reused across calls, so the token cost is modest; on a subscription it counts against the 5-hour/weekly usage windows, not your wallet.
 
 **Haiku errors with "adaptive thinking is not supported"?**
 Older models reject the modern thinking API. The plugin detects this and automatically retries with thinking disabled.

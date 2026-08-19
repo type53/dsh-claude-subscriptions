@@ -21,6 +21,7 @@ English · [简体中文](README.zh.md)
 如果你**已经有 Claude Pro / Max 订阅**，并且平时用 **DeepSeek Harness web** 干活，这个插件能让你在同一个界面里按需切换模型：
 
 - **设置 → 订阅**：直接显示你当前的订阅状态（账号、订阅类型、限流档位），读取自 **Claude Code 登录**（`~/.claude/.credentials.json`），无需弹窗登录；
+- **两种模式**：*令牌模式* 直连 Messages API（订阅令牌通常只放行 haiku）；*控制台模式* 驱动官方 `claude` CLI，保留第一方客户端资格，**opus/sonnet 可用**；
 - 没有 Claude Code 登录？把 **`claude setup-token`** 输出的令牌粘贴到「订阅」页即可（该命令由 Anthropic 官方提供，用于在 SDK/API 场景使用订阅，但受订阅条款与模型配额限制）；
 - 有可用令牌后，会话输入框旁的**模型选择器**（或 `/model`）里会出现 Claude 模型，选中即可让 agent 用 Claude 执行任务；
 - **模型列表会自动从 Anthropic 拉取**（也能在「订阅」页手动刷新）；
@@ -90,7 +91,10 @@ dsh --profile web
 插件会自动续期 Claude Code 令牌（轮换安全：新令牌会写回凭据文件）。如果续期失败，重新运行 `claude login`。
 
 **Opus / Sonnet 报「Retry delay / Failure reason: Error」？**
-那个 "Error" 是 Anthropic 对 `rate_limit_error` 返回的极简消息——订阅 API 对 opus/sonnet 的配额极少（常常为零），haiku 通常可用。这是 Anthropic 对订阅 API 使用旗舰模型的策略限制：通过本插件建议用 haiku，旗舰模型请用付费 API Key。
+那个 "Error" 是 Anthropic 对 `rate_limit_error` 返回的极简消息——订阅令牌直连 Messages API 只被授予 haiku，opus/sonnet 在查配额之前就被拒绝。把「订阅」页切换到 **Claude Code 控制台** 模式：插件改驱动官方 `claude` CLI，保留第一方客户端资格，opus/sonnet 即可使用（已验证）。或改用付费 API Key。
+
+**控制台模式更慢吗？**
+每次模型调用会启动一次 claude 进程（首 token 前约 1-3 秒开销），且由 Claude Code 自己执行工具（用它的沙箱，不是 harness 的）。约 1.5 万的系统提示/工具脚手架在多次调用间走缓存复用，token 开销可控；订阅下计入 5 小时/每周的使用额度窗口，而非直接扣钱。
 
 **haiku 报「adaptive thinking is not supported」？**
 老模型不支持新版思考 API。插件会自动检测并降级为关闭思考重试。
