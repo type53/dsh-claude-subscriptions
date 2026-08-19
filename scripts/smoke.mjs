@@ -213,6 +213,14 @@ ok('buildTranscript renders a role-tagged conversation', () => {
   assert.ok(stdin.includes('<user>\nnext\n</user>'));
 });
 
+ok('buildTranscript omits the system prompt when unset (clean Claude persona)', () => {
+  const { args } = buildTranscript({
+    model: 'claude-opus-5',
+    messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+  });
+  assert.ok(!args.includes('--append-system-prompt'), 'no harness system prompt in console mode');
+});
+
 ok('mapEvent translates claude stream-json events', () => {
   const textChunks = mapEvent({
     type: 'assistant',

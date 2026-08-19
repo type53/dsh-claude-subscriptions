@@ -117,6 +117,11 @@ The model list refreshes automatically after you connect (and via the **Refresh 
 
 ```yaml
 llm-claude:
+  mode: console                 # token | console (Claude Code console mode)
+  consoleSystemPrompt: ""       # optional custom persona for console mode;
+                                # unset = Claude Code uses its own system prompt
+                                # (the harness prompt is NOT injected, so no
+                                # dsh/harness branding reaches the claude CLI)
   reasoningEffort: high          # off | low | medium | high | xhigh | max, thinking intensity
   maxTokens: 32000
   defaultContextWindow: 200000

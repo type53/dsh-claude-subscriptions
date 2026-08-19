@@ -117,6 +117,10 @@ dsh --profile web
 
 ```yaml
 llm-claude:
+  mode: console                 # token | console（Claude Code 控制台模式）
+  consoleSystemPrompt: ""       # 可选：控制台模式的自定义人格；不设置时
+                                # Claude Code 使用自己的系统提示（harness 提示
+                                # 不注入，claude 进程不会看到 dsh/harness 内容）
   reasoningEffort: high          # off | low | medium | high | xhigh | max，思考强度
   maxTokens: 32000
   defaultContextWindow: 200000
